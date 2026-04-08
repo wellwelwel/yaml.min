@@ -1,0 +1,63 @@
+{
+  "name": "yaml.min",
+  "version": "0.1.2",
+  "description": "🔧 Faster and lightweight YAML v1.2 parser for JavaScript and TypeScript.",
+  "main": "./lib/index.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wellwelwel/yaml.min.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wellwelwel/yaml.min/issues"
+  },
+  "author": "https://github.com/wellwelwel",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/wellwelwel"
+  },
+  "files": [
+    "lib"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "prebuild": "rm -rf lib",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=lib/index.js && tsc",
+    "postbuild": "find lib -name '*.d.ts' ! -name 'index.d.ts' -delete && find lib -type d -empty -delete",
+    "test": "poku -r=compact",
+    "test:bun": "bun --bun poku -r=compact",
+    "test:deno": "deno run -A npm:poku -r=compact",
+    "test:coverage": "npm run test -- --coverage",
+    "lint": "biome lint && prettier --check .",
+    "lint:fix": "biome lint --write && prettier --write .github/workflows/*.yml .",
+    "update": "pu minor && npm i && npm update && (npm audit fix || true) && npm run lint:fix"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+    "@pokujs/monocart": "^1.0.0",
+    "@types/node": "^24.10.9",
+    "esbuild": "^0.28.0",
+    "packages-update": "^2.0.0",
+    "poku": "^4.2.0",
+    "prettier": "^3.8.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "keywords": [
+    "yaml",
+    "yml",
+    "parser",
+    "config",
+    "configuration",
+    "node",
+    "nodejs",
+    "bun",
+    "deno",
+    "typescript",
+    "fast",
+    "lightweight"
+  ]
+}
