@@ -1,6 +1,6 @@
 {
   "name": "yaml.min",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "🔧 Faster and lightweight YAML v1.2 parser for JavaScript and TypeScript.",
   "main": "./lib/index.js",
   "license": "MIT",
