@@ -1,0 +1,13 @@
+{
+  "type": "module",
+  "scripts": {
+    "yaml": "hyperfine --warmup 5 --runs 10 'node yaml.min.mjs' 'node yaml.mjs'",
+    "js-yaml": "hyperfine --warmup 5 --runs 10 'node yaml.min.mjs' 'node js-yaml.mjs'",
+    "benchmark": "npm run js-yaml&& npm run yaml"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1",
+    "yaml": "^2.8.3",
+    "yaml.min": "file:.."
+  }
+}
