@@ -1,0 +1,2 @@
+&k mykey: val
+other: *k

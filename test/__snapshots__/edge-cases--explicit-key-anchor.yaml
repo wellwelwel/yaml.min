@@ -1,0 +1,3 @@
+? &k mykey
+: val
+ref: *k
