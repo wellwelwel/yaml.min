@@ -131,6 +131,8 @@ hex: 0xDEADBEEF
 octal: 0o755
 ```
 
+An integer beyond the range JavaScript holds exactly (±9,007,199,254,740,991), such as a 20-digit identifier, stays a string instead of being rounded.
+
 ### Floats
 
 ```yaml
@@ -216,6 +218,18 @@ An alias returns the value its anchor labels, not a copy, so changing it in one 
 ```yaml
 complex key: value
 ```
+
+### Tags
+
+A core schema tag sets a value's type, whatever its quoting:
+
+```yaml
+enabled: !!bool 'false' # false
+zip: !!str 01234 # "01234"
+limit: !!int '5' # 5
+```
+
+`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` are honored, including through `%TAG` handles and verbatim tags such as `!<tag:yaml.org,2002:str>`. Any other tag, such as `!!binary`, `!!timestamp`, or `!custom`, and a value that does not fit its tag, such as `!!int "five"`, are rejected with a `SyntaxError`.
 
 ### Document Markers
 

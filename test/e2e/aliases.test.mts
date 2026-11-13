@@ -109,8 +109,17 @@ describe('An alias must name a node completed before it', () => {
 });
 
 describe('A node carries at most one anchor', () => {
-  it('rejects a scalar with two anchors', () =>
-    strict.throws(() => parse('&a &b value\n'), SyntaxError));
+  const doublyAnchoredNodes = {
+    'on one line': '&a &b value\n',
+    'on consecutive lines of the root node': '&a\n&b value\n',
+    'on consecutive lines of a block mapping value': 'key: &a\n  &b value\n',
+    'on consecutive lines of a flow sequence item': '[&a\n &b value]',
+  };
+
+  for (const [name, input] of Object.entries(doublyAnchoredNodes)) {
+    it(`rejects two anchors ${name}`, () =>
+      strict.throws(() => parse(input), SyntaxError));
+  }
 
   it('rejects an alias to the first of two anchors on one node', () =>
     strict.throws(() => parse('a: &a &b 1\nc: *a\n'), SyntaxError));

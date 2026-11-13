@@ -13,12 +13,13 @@ import {
   CHAR_UPPER_F,
   CHAR_UPPER_N,
   CHAR_UPPER_T,
-  FLOAT_NUMERAL,
   hexadecimalDigitValue,
-  INFINITY_NUMERAL,
 } from './chars.js';
 
 const RADIX_PREFIX_LENGTH = 2;
+
+const FLOAT_NUMERAL = /^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/;
+const INFINITY_NUMERAL = /^[+-]?\.(inf|Inf|INF)$/;
 
 const isDigitRun = (raw: string, start: number, radix: number): boolean => {
   if (start >= raw.length) return false;
@@ -49,23 +50,59 @@ const resolveInteger = (raw: string): number | undefined => {
     const isPrefixed = prefix === CHAR_LOWER_O || prefix === CHAR_LOWER_X;
 
     if (isPrefixed && signLength > 0) return undefined;
-
     if (prefix === CHAR_LOWER_O) return resolvePrefixedInteger(raw, 8);
-
     if (prefix === CHAR_LOWER_X) return resolvePrefixedInteger(raw, 16);
   }
 
   return isDigitRun(raw, signLength, 10) ? Number.parseInt(raw, 10) : undefined;
 };
 
+const toSafeInteger = (integer: number): number | undefined =>
+  Number.isSafeInteger(integer) ? integer : undefined;
+
+const isNumeralStart = (code: number): boolean =>
+  (code >= CHAR_0 && code <= CHAR_9) ||
+  code === CHAR_PLUS ||
+  code === CHAR_MINUS ||
+  code === CHAR_DOT;
+
+export const isNullText = (raw: string): boolean =>
+  raw === '~' || raw === 'null' || raw === 'Null' || raw === 'NULL';
+
+export const resolveBoolean = (raw: string): boolean | undefined => {
+  if (raw === 'true' || raw === 'True' || raw === 'TRUE') return true;
+  if (raw === 'false' || raw === 'False' || raw === 'FALSE') return false;
+
+  return undefined;
+};
+
+export const resolveSafeInteger = (raw: string): number | undefined => {
+  const integer = resolveInteger(raw);
+
+  return integer === undefined ? undefined : toSafeInteger(integer);
+};
+
+export const resolveFloat = (raw: string): number | undefined => {
+  if (FLOAT_NUMERAL.test(raw)) {
+    const float = Number.parseFloat(raw);
+
+    return Number.isFinite(float) ? float : undefined;
+  }
+
+  if (INFINITY_NUMERAL.test(raw))
+    return raw.charCodeAt(0) === CHAR_MINUS
+      ? Number.NEGATIVE_INFINITY
+      : Number.POSITIVE_INFINITY;
+
+  return raw === '.nan' || raw === '.NaN' || raw === '.NAN'
+    ? Number.NaN
+    : undefined;
+};
+
 const resolveNumeral = (raw: string): number | undefined => {
   const integer = resolveInteger(raw);
 
-  if (integer !== undefined) return integer;
-
-  if (FLOAT_NUMERAL.test(raw)) return Number.parseFloat(raw);
-
-  return undefined;
+  return integer === undefined ? resolveFloat(raw) : toSafeInteger(integer);
 };
 
 export const resolveScalar = (raw: string): unknown => {
@@ -73,42 +110,29 @@ export const resolveScalar = (raw: string): unknown => {
 
   const firstCharCode = raw.charCodeAt(0);
 
-  if (firstCharCode === CHAR_TILDE && raw.length === 1) return null;
-
   if (
-    (firstCharCode === CHAR_LOWER_N || firstCharCode === CHAR_UPPER_N) &&
-    (raw === 'null' || raw === 'Null' || raw === 'NULL')
+    (firstCharCode === CHAR_TILDE ||
+      firstCharCode === CHAR_LOWER_N ||
+      firstCharCode === CHAR_UPPER_N) &&
+    isNullText(raw)
   )
     return null;
 
   if (
-    (firstCharCode === CHAR_LOWER_T || firstCharCode === CHAR_UPPER_T) &&
-    (raw === 'true' || raw === 'True' || raw === 'TRUE')
-  )
-    return true;
-
-  if (
-    (firstCharCode === CHAR_LOWER_F || firstCharCode === CHAR_UPPER_F) &&
-    (raw === 'false' || raw === 'False' || raw === 'FALSE')
-  )
-    return false;
-
-  if (
-    (firstCharCode >= CHAR_0 && firstCharCode <= CHAR_9) ||
-    firstCharCode === CHAR_PLUS ||
-    firstCharCode === CHAR_MINUS ||
-    firstCharCode === CHAR_DOT
+    firstCharCode === CHAR_LOWER_T ||
+    firstCharCode === CHAR_UPPER_T ||
+    firstCharCode === CHAR_LOWER_F ||
+    firstCharCode === CHAR_UPPER_F
   ) {
+    const boolean = resolveBoolean(raw);
+
+    if (boolean !== undefined) return boolean;
+  }
+
+  if (isNumeralStart(firstCharCode)) {
     const numeral = resolveNumeral(raw);
 
-    if (Number.isFinite(numeral)) return numeral;
-
-    if (INFINITY_NUMERAL.test(raw))
-      return firstCharCode === CHAR_MINUS
-        ? Number.NEGATIVE_INFINITY
-        : Number.POSITIVE_INFINITY;
-
-    if (raw === '.nan' || raw === '.NaN' || raw === '.NAN') return Number.NaN;
+    if (numeral !== undefined) return numeral;
   }
 
   return raw;

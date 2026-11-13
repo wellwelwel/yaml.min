@@ -136,7 +136,62 @@ describe('Numerals too large for a number', () => {
     }));
 });
 
+describe('Numerals keep the exact value the document wrote', () => {
+  const exactNumerals = {
+    'the largest safe decimal integer': ['9007199254740991', 9007199254740991],
+    'the smallest safe decimal integer': [
+      '-9007199254740991',
+      -9007199254740991,
+    ],
+    'the largest safe hexadecimal integer': [
+      '0x1FFFFFFFFFFFFF',
+      9007199254740991,
+    ],
+    'the largest safe octal integer': [
+      '0o377777777777777777',
+      9007199254740991,
+    ],
+    'a decimal integer with a leading zero': ['01234', 1234],
+    'the largest finite exponent': ['1e308', 1e308],
+  };
+  const unsafeIntegers = {
+    'one past the largest safe decimal integer': '9007199254740992',
+    'one past the smallest safe decimal integer': '-9007199254740992',
+    'a twenty-digit identifier': '12345678901234567890',
+    'one past the largest safe hexadecimal integer': '0x20000000000000',
+    'one past the largest safe octal integer': '0o400000000000000000',
+    'the first exponent past the largest finite number': '1e309',
+  };
+
+  for (const [name, [input, expected]] of Object.entries(exactNumerals)) {
+    it(`returns ${name} as a number`, () =>
+      strict.equal(parse(input), expected));
+  }
+
+  for (const [name, input] of Object.entries(unsafeIntegers)) {
+    it(`keeps ${name} as text`, () => strict.equal(parse(input), input));
+  }
+
+  it('keeps unsafe integers as text inside collections', () =>
+    strict.deepEqual(
+      parse('id: 12345678901234567890\nids: [9007199254740992, 7]\n'),
+      { id: '12345678901234567890', ids: ['9007199254740992', 7] }
+    ));
+});
+
 describe('Floats', () => {
+  const literalSpellings = {
+    '.Inf': Number.POSITIVE_INFINITY,
+    '.INF': Number.POSITIVE_INFINITY,
+    '-.Inf': Number.NEGATIVE_INFINITY,
+    '-.INF': Number.NEGATIVE_INFINITY,
+  };
+
+  for (const [input, expected] of Object.entries(literalSpellings)) {
+    it(`returns ${input} as its special number`, () =>
+      strict.equal(parse(input), expected));
+  }
+
   it('simple', () =>
     assertParsesTo(read('scalar-types--float-simple.yaml'), 3.14));
 

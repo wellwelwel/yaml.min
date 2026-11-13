@@ -17,6 +17,7 @@ import {
   skipNewlinesAndComments,
   skipSpaces,
 } from './navigation.js';
+import { isTagDirective, readTagDirective } from './tags.js';
 
 const rejectNonPrintable = (state: ParserState): void => {
   const match = NON_PRINTABLE.exec(state.src);
@@ -51,6 +52,7 @@ export const createParserState = (input: string): ParserState => {
     pos: 0,
     depth: 0,
     anchors: { nodes: new Map(), expansion: 0 },
+    tagHandles: new Map(),
   };
 
   rejectNonPrintable(state);
@@ -86,6 +88,8 @@ const closeDocument = (state: ParserState): void => {
 };
 
 export const skipToDocument = (state: ParserState): boolean => {
+  state.tagHandles.clear();
+
   while (state.pos < state.len) {
     const lineIndent = skipNewlinesAndComments(state);
 
@@ -94,6 +98,11 @@ export const skipToDocument = (state: ParserState): boolean => {
     if (state.src.charCodeAt(state.pos) !== CHAR_PERCENT) {
       state.pos -= lineIndent;
       return true;
+    }
+
+    if (lineIndent === 0 && isTagDirective(state)) {
+      readTagDirective(state);
+      continue;
     }
 
     while (
@@ -115,7 +124,7 @@ export const readDocument = (state: ParserState): unknown => {
   const value =
     state.pos >= state.len || isDocumentMarker(state, state.pos)
       ? null
-      : parseValue(state, -1, lineIndent);
+      : parseValue(state, -1, lineIndent, false, undefined);
 
   closeDocument(state);
 

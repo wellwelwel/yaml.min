@@ -141,3 +141,17 @@
 - **Category:** Interpretation conflict, parser differential (CWE-436)
 - **What it is:** Both mapping styles must turn a parsed key into a property name and they do it two different ways. The indentation style uses the shared key-stringifier. The bracket-and-brace style uses a plain string conversion instead. The same key therefore lands under different names depending only on which syntax the document used: a list key becomes `a,b` in one style and `["a","b"]` in the other, and an empty key becomes `null` in one and an empty name in the other.
 - **Closed:** 2026-11-13
+
+### Numeric scalars are coerced with no precision or range check
+
+- **Classification:** Medium
+- **Category:** Numeric truncation and precision loss (CWE-681)
+- **What it is:** Any text shaped like a number is handed to the platform's integer and floating-point converters and the result is returned as-is, with no check that the value survived the conversion intact. A twenty-digit integer comes back rounded to a different number. A large hexadecimal value comes back as an approximation. A leading zero is dropped. An out-of-range exponent becomes infinity, and the document can also name infinity and not-a-number directly.
+- **Closed:** 2026-11-13
+
+### Explicit type tags are discarded, so values keep the type the parser guesses
+
+- **Classification:** Medium
+- **Category:** Interpretation conflict through ignored type declarations, parser differential (CWE-436, CWE-1287)
+- **What it is:** A YAML document can state a value's type outright with a tag such as `!!str`, `!!bool`, `!!int`, or `!!null`. The parser reads past every tag and throws it away without telling anyone, then decides the type from the bare text alone, exactly as if the tag had never been written. Tags it does not recognise, including application-specific ones like `!custom`, are dropped the same way instead of being refused.
+- **Closed:** 2026-11-13

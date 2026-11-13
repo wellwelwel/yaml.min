@@ -1,5 +1,10 @@
-import type { FlowCollection, ParserState } from '../types.js';
-import { parseAlias, readAnchorOrTag, withAnchor } from './anchors.js';
+import type {
+  FlowCollection,
+  NodeProperties,
+  NodeTag,
+  ParserState,
+} from '../types.js';
+import { parseAlias, withAnchor } from './anchors.js';
 import {
   CHAR_COLON,
   CHAR_COMMA,
@@ -26,12 +31,18 @@ import {
   skipComment,
   skipSpaces,
 } from './navigation.js';
-import { resolveScalar } from './scalars.js';
+import { mergeNodeProperties, readNodeProperties } from './properties.js';
 import {
   parseDoubleQuoted,
   parsePlainScalar,
   parseSingleQuoted,
 } from './strings.js';
+import {
+  checkCollectionTag,
+  resolveEmptyNode,
+  resolvePlainScalar,
+  resolveTextScalar,
+} from './tags.js';
 
 const FLOW_SEQUENCE: FlowCollection = {
   name: 'flow sequence',
@@ -105,6 +116,22 @@ const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
 const skipFlowIndicator = (state: ParserState, ownerIndent: number): void => {
   state.pos++;
   skipFlowSeparation(state, ownerIndent);
+};
+
+const readFlowNodeProperties = (
+  state: ParserState,
+  ownerIndent: number
+): NodeProperties | undefined => {
+  let properties: NodeProperties | undefined;
+  let lineProperties = readNodeProperties(state, true);
+
+  while (lineProperties !== undefined) {
+    properties = mergeNodeProperties(state, properties, lineProperties);
+    skipFlowSeparation(state, ownerIndent);
+    lineProperties = readNodeProperties(state, true);
+  }
+
+  return properties;
 };
 
 const isFlowTerminator = (state: ParserState): boolean => {
@@ -233,19 +260,27 @@ const completeImplicitPair = (
 const parseFlowNode = (
   state: ParserState,
   ownerIndent: number,
-  allowsImplicitPair: boolean
+  allowsImplicitPair: boolean,
+  tag: NodeTag | undefined
 ): unknown => {
   const code = state.src.charCodeAt(state.pos);
 
-  if (code === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LEFT_BRACKET) return parseFlowSequence(state, ownerIndent);
-  if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
-  if (code === CHAR_STAR) return parseAlias(state);
-  if (isFlowTerminator(state)) return null;
+  if (code === CHAR_SINGLE_QUOTE)
+    return resolveTextScalar(state, tag, parseSingleQuoted(state));
+  if (code === CHAR_DOUBLE_QUOTE)
+    return resolveTextScalar(state, tag, parseDoubleQuoted(state));
+  if (code === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, ownerIndent, tag);
+  if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
+  if (code === CHAR_STAR) return parseAlias(state, tag);
+  if (isFlowTerminator(state)) return resolveEmptyNode(state, tag);
 
   const scalarStart = state.pos;
-  const scalar = resolveScalar(parsePlainScalar(state, ownerIndent, true));
+  const scalar = resolvePlainScalar(
+    state,
+    tag,
+    parsePlainScalar(state, ownerIndent, true)
+  );
 
   return allowsImplicitPair
     ? completeImplicitPair(state, ownerIndent, scalar, scalarStart)
@@ -255,7 +290,13 @@ const parseFlowNode = (
 const parseFlowValue = (state: ParserState, ownerIndent: number): unknown => {
   skipFlowSeparation(state, ownerIndent);
 
-  return parseFlowNode(state, ownerIndent, true);
+  const properties = readFlowNodeProperties(state, ownerIndent);
+
+  return withAnchor(
+    state,
+    properties?.anchor,
+    parseFlowNode(state, ownerIndent, true, properties?.tag)
+  );
 };
 
 const skipExplicitKeyIndicator = (
@@ -276,22 +317,16 @@ const parseFlowMapValue = (
 
   skipFlowIndicator(state, ownerIndent);
 
-  if (state.pos >= state.len) return null;
-
-  const code = state.src.charCodeAt(state.pos);
-
-  if (code === CHAR_COMMA || code === CHAR_RIGHT_BRACE) return null;
-
-  const valueAnchor = readAnchorOrTag(state);
-
-  return withAnchor(state, valueAnchor, parseFlowValue(state, ownerIndent));
+  return parseFlowValue(state, ownerIndent);
 };
 
 export const parseFlowSequence = (
   state: ParserState,
-  ownerIndent: number
+  ownerIndent: number,
+  tag: NodeTag | undefined
 ): unknown[] => {
   enterCollection(state);
+  checkCollectionTag(state, tag, 'seq');
 
   const openedAt = state.pos;
   const result: unknown[] = [];
@@ -299,9 +334,7 @@ export const parseFlowSequence = (
   state.pos++;
 
   while (openFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) {
-    const anchor = readAnchorOrTag(state);
-
-    result.push(withAnchor(state, anchor, parseFlowValue(state, ownerIndent)));
+    result.push(parseFlowValue(state, ownerIndent));
 
     if (!closeFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) break;
   }
@@ -313,9 +346,11 @@ export const parseFlowSequence = (
 
 export const parseFlowMap = (
   state: ParserState,
-  ownerIndent: number
+  ownerIndent: number,
+  tag: NodeTag | undefined
 ): Record<string, unknown> => {
   enterCollection(state);
+  checkCollectionTag(state, tag, 'map');
 
   const openedAt = state.pos;
   const result: Record<string, unknown> = {};
@@ -326,11 +361,11 @@ export const parseFlowMap = (
     skipExplicitKeyIndicator(state, ownerIndent);
 
     const keyStart = state.pos;
-    const keyAnchor = readAnchorOrTag(state);
+    const properties = readFlowNodeProperties(state, ownerIndent);
     const key = withAnchor(
       state,
-      keyAnchor,
-      parseFlowNode(state, ownerIndent, false)
+      properties?.anchor,
+      parseFlowNode(state, ownerIndent, false, properties?.tag)
     );
 
     skipFlowSeparation(state, ownerIndent);

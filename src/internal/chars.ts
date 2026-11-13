@@ -18,6 +18,7 @@ export const CHAR_0 = 0x30;
 export const CHAR_1 = 0x31;
 export const CHAR_9 = 0x39;
 export const CHAR_COLON = 0x3a;
+export const CHAR_LESS_THAN = 0x3c;
 export const CHAR_GREATER_THAN = 0x3e;
 export const CHAR_QUESTION = 0x3f;
 export const CHAR_UPPER_A = 0x41;
@@ -75,11 +76,6 @@ export const SIMPLE_ESCAPE_MAP: (string | undefined)[] = Array.from(
   { length: 128 },
   (_, code) => SIMPLE_ESCAPES[String.fromCharCode(code)]
 );
-
-export const FLOAT_NUMERAL =
-  /^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/;
-
-export const INFINITY_NUMERAL = /^[+-]?\.(inf|Inf|INF)$/;
 
 export const isSpaceOrTab = (code: number): boolean =>
   code === CHAR_SPACE || code === CHAR_TAB;

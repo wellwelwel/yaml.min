@@ -1,5 +1,5 @@
-import type { ParserState } from '../types.js';
-import { parseAlias, readAnchorOrTag, withAnchor } from './anchors.js';
+import type { NodeProperties, NodeTag, ParserState } from '../types.js';
+import { parseAlias, withAnchor } from './anchors.js';
 import {
   CHAR_BACKSLASH,
   CHAR_COLON,
@@ -30,7 +30,7 @@ import {
   skipNewlinesAndComments,
   skipSpaces,
 } from './navigation.js';
-import { resolveScalar } from './scalars.js';
+import { mergeNodeProperties, readNodeProperties } from './properties.js';
 import {
   findPlainLineEnd,
   parseBlockScalar,
@@ -39,6 +39,12 @@ import {
   parsePlainScalar,
   parseSingleQuoted,
 } from './strings.js';
+import {
+  checkCollectionTag,
+  resolveEmptyNode,
+  resolvePlainScalar,
+  resolveTextScalar,
+} from './tags.js';
 
 const isIndicatorAt = (state: ParserState, indicatorCode: number): boolean => {
   if (state.src.charCodeAt(state.pos) !== indicatorCode) return false;
@@ -98,6 +104,24 @@ const hasMappingIndicatorInLine = (state: ParserState): boolean =>
   state.src.charCodeAt(findPlainLineEnd(state, state.pos, false)) ===
   CHAR_COLON;
 
+const isContentIndicator = (code: number): boolean =>
+  code === CHAR_SINGLE_QUOTE ||
+  code === CHAR_DOUBLE_QUOTE ||
+  code === CHAR_LEFT_BRACKET ||
+  code === CHAR_LEFT_BRACE ||
+  code === CHAR_PIPE ||
+  code === CHAR_GREATER_THAN ||
+  code === CHAR_STAR;
+
+const opensImplicitKey = (state: ParserState): boolean => {
+  const code = state.src.charCodeAt(state.pos);
+
+  if (code === CHAR_SINGLE_QUOTE || code === CHAR_DOUBLE_QUOTE)
+    return isQuotedMapKey(state, code);
+
+  return !isContentIndicator(code) && hasMappingIndicatorInLine(state);
+};
+
 const finishLine = (state: ParserState): void => {
   if (isAtLineBreakOrEnd(state) || isLineStart(state, state.pos)) return;
 
@@ -139,14 +163,22 @@ const enterBlockLine = (state: ParserState, indent: number): boolean => {
 const parseNextLineValue = (
   state: ParserState,
   ownerIndent: number,
-  allowsIndentlessSequence: boolean
+  allowsIndentlessSequence: boolean,
+  properties: NodeProperties | undefined
 ): unknown => {
   const nextIndent = skipNewlinesAndComments(state);
 
-  if (state.pos >= state.len) return null;
+  if (state.pos >= state.len || isDocumentMarker(state, state.pos))
+    return resolveEmptyNode(state, properties?.tag);
 
   if (nextIndent > ownerIndent)
-    return parseValue(state, ownerIndent, nextIndent);
+    return parseValue(
+      state,
+      ownerIndent,
+      nextIndent,
+      allowsIndentlessSequence,
+      properties
+    );
 
   const opensIndentlessSequence =
     allowsIndentlessSequence &&
@@ -156,8 +188,8 @@ const parseNextLineValue = (
   state.pos -= nextIndent;
 
   return opensIndentlessSequence
-    ? parseBlockSequence(state, ownerIndent)
-    : null;
+    ? parseBlockSequence(state, ownerIndent, false, properties?.tag)
+    : resolveEmptyNode(state, properties?.tag);
 };
 
 const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
@@ -166,27 +198,40 @@ const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
   state.pos++;
   skipSpaces(state);
 
-  const contentColumn = indent + state.pos - dashStart;
-  const anchor = readAnchorOrTag(state);
+  const contentStart = state.pos;
+  const contentColumn = indent + contentStart - dashStart;
+  const properties = readNodeProperties(state, false);
 
   skipComment(state);
 
   if (isAtLineBreakOrEnd(state))
-    return withAnchor(state, anchor, parseNextLineValue(state, indent, false));
+    return withAnchor(
+      state,
+      properties?.anchor,
+      parseNextLineValue(state, indent, false, properties)
+    );
 
-  const value = parseInlineValue(state, indent, contentColumn);
+  const value = parseInlineValue(
+    state,
+    indent,
+    contentColumn,
+    contentStart,
+    properties?.tag
+  );
 
   finishLine(state);
 
-  return withAnchor(state, anchor, value);
+  return withAnchor(state, properties?.anchor, value);
 };
 
 const parseBlockSequence = (
   state: ParserState,
   indent: number,
-  isInline = false
+  isInline: boolean,
+  tag: NodeTag | undefined
 ): unknown[] => {
   enterCollection(state);
+  checkCollectionTag(state, tag, 'seq');
 
   const result: unknown[] = [];
 
@@ -206,42 +251,64 @@ const parseBlockSequence = (
   return result;
 };
 
-const parseMapValueContent = (state: ParserState, indent: number): unknown => {
-  if (isAtLineBreakOrEnd(state)) return parseNextLineValue(state, indent, true);
+const parseScalarOrFlowNode = (
+  state: ParserState,
+  ownerIndent: number,
+  tag: NodeTag | undefined
+): unknown => {
+  const code = state.src.charCodeAt(state.pos);
 
-  const valueCode = state.src.charCodeAt(state.pos);
+  if (code === CHAR_SINGLE_QUOTE)
+    return resolveTextScalar(state, tag, parseSingleQuoted(state));
+  if (code === CHAR_DOUBLE_QUOTE)
+    return resolveTextScalar(state, tag, parseDoubleQuoted(state));
+  if (code === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, ownerIndent, tag);
+  if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
+  if (code === CHAR_PIPE || code === CHAR_GREATER_THAN)
+    return resolveTextScalar(state, tag, parseBlockScalar(state, ownerIndent));
+  if (code === CHAR_STAR) return parseAlias(state, tag);
 
-  if (valueCode === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
-  if (valueCode === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
-  if (valueCode === CHAR_LEFT_BRACKET) return parseFlowSequence(state, indent);
-  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent);
-  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
-    return parseBlockScalar(state, indent);
-  if (valueCode === CHAR_STAR) return parseAlias(state);
-
-  return resolveScalar(parsePlainScalar(state, indent, false));
+  return resolvePlainScalar(
+    state,
+    tag,
+    parsePlainScalar(state, ownerIndent, false)
+  );
 };
 
 const parseMapValue = (state: ParserState, indent: number): unknown => {
-  const valueAnchor = readAnchorOrTag(state);
+  const properties = readNodeProperties(state, false);
 
   skipComment(state);
 
-  return withAnchor(state, valueAnchor, parseMapValueContent(state, indent));
+  return withAnchor(
+    state,
+    properties?.anchor,
+    isAtLineBreakOrEnd(state)
+      ? parseNextLineValue(state, indent, true, properties)
+      : parseScalarOrFlowNode(state, indent, properties?.tag)
+  );
 };
 
-const parseMapKey = (state: ParserState, indent: number): unknown => {
+const parseMapKey = (
+  state: ParserState,
+  indent: number,
+  tag: NodeTag | undefined
+): unknown => {
   const keyCode = state.src.charCodeAt(state.pos);
 
-  if (keyCode === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
-  if (keyCode === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
-  if (keyCode === CHAR_LEFT_BRACKET) return parseFlowSequence(state, indent);
-  if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent);
-  if (keyCode === CHAR_STAR) return parseAlias(state);
+  if (keyCode === CHAR_SINGLE_QUOTE)
+    return resolveTextScalar(state, tag, parseSingleQuoted(state));
+  if (keyCode === CHAR_DOUBLE_QUOTE)
+    return resolveTextScalar(state, tag, parseDoubleQuoted(state));
+  if (keyCode === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, indent, tag);
+  if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent, tag);
+  if (keyCode === CHAR_STAR) return parseAlias(state, tag);
   if (opensBlockCollection(state, keyCode))
     throw collectionKeyError(state, state.pos);
 
-  return resolveScalar(parsePlainKey(state));
+  return resolvePlainScalar(state, tag, parsePlainKey(state));
 };
 
 const parseMapEntry = (
@@ -250,8 +317,12 @@ const parseMapEntry = (
   indent: number
 ): void => {
   const entryStart = state.pos;
-  const keyAnchor = readAnchorOrTag(state);
-  const key = withAnchor(state, keyAnchor, parseMapKey(state, indent));
+  const properties = readNodeProperties(state, false);
+  const key = withAnchor(
+    state,
+    properties?.anchor,
+    parseMapKey(state, indent, properties?.tag)
+  );
 
   skipSpaces(state);
 
@@ -275,11 +346,13 @@ const parseExplicitKey = (
   skipIndicator(state);
 
   const keyStart = state.pos;
-  const keyAnchor = readAnchorOrTag(state);
+  const properties = readNodeProperties(state, false);
   const key = withAnchor(
     state,
-    keyAnchor,
-    isAtLineBreakOrEnd(state) ? null : parseMapKey(state, indent)
+    properties?.anchor,
+    isAtLineBreakOrEnd(state)
+      ? resolveEmptyNode(state, properties?.tag)
+      : parseMapKey(state, indent, properties?.tag)
   );
 
   finishLine(state);
@@ -308,9 +381,11 @@ const parseExplicitKey = (
 const parseBlockMap = (
   state: ParserState,
   indent: number,
-  isInline = false
+  isInline: boolean,
+  tag: NodeTag | undefined
 ): Record<string, unknown> => {
   enterCollection(state);
+  checkCollectionTag(state, tag, 'map');
 
   const result: Record<string, unknown> = {};
 
@@ -336,85 +411,99 @@ const parseBlockMap = (
   return result;
 };
 
+const parseCompactMap = (
+  state: ParserState,
+  column: number,
+  contentStart: number
+): Record<string, unknown> => {
+  state.pos = contentStart;
+
+  return parseBlockMap(state, column, true, undefined);
+};
+
+const parseCompactSequence = (
+  state: ParserState,
+  column: number,
+  tag: NodeTag | undefined
+): unknown[] => {
+  if (tag !== undefined)
+    throw syntaxError(
+      state,
+      `The tag ${tag.source} labels a sequence that starts on the same line: expected the tag alone on its line, with the sequence entries below it`,
+      tag.start
+    );
+
+  return parseBlockSequence(state, column, true, undefined);
+};
+
 const parseInlineValue = (
   state: ParserState,
   ownerIndent: number,
-  column: number
+  column: number,
+  contentStart: number,
+  tag: NodeTag | undefined
 ): unknown => {
-  const valueCode = state.src.charCodeAt(state.pos);
+  if (isSequenceEntry(state)) return parseCompactSequence(state, column, tag);
+  if (opensImplicitKey(state))
+    return parseCompactMap(state, column, contentStart);
 
-  if (valueCode === CHAR_SINGLE_QUOTE || valueCode === CHAR_DOUBLE_QUOTE) {
-    if (isQuotedMapKey(state, valueCode))
-      return parseBlockMap(state, column, true);
-
-    return valueCode === CHAR_SINGLE_QUOTE
-      ? parseSingleQuoted(state)
-      : parseDoubleQuoted(state);
-  }
-
-  if (valueCode === CHAR_LEFT_BRACKET)
-    return parseFlowSequence(state, ownerIndent);
-  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
-  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
-    return parseBlockScalar(state, ownerIndent);
-  if (valueCode === CHAR_STAR) return parseAlias(state);
-  if (isSequenceEntry(state)) return parseBlockSequence(state, column, true);
-  if (hasMappingIndicatorInLine(state))
-    return parseBlockMap(state, column, true);
-
-  return resolveScalar(parsePlainScalar(state, ownerIndent, false));
+  return parseScalarOrFlowNode(state, ownerIndent, tag);
 };
 
 const parseValueContent = (
   state: ParserState,
   ownerIndent: number,
   lineStart: number,
-  lineIndent: number
+  lineIndent: number,
+  own: NodeProperties | undefined,
+  inherited: NodeProperties | undefined
 ): unknown => {
-  const valueCode = state.src.charCodeAt(state.pos);
-
-  if (valueCode === CHAR_SINGLE_QUOTE || valueCode === CHAR_DOUBLE_QUOTE) {
-    if (isQuotedMapKey(state, valueCode)) {
-      state.pos = lineStart;
-      return parseBlockMap(state, lineIndent);
-    }
-
-    return valueCode === CHAR_SINGLE_QUOTE
-      ? parseSingleQuoted(state)
-      : parseDoubleQuoted(state);
-  }
-
-  if (valueCode === CHAR_LEFT_BRACKET)
-    return parseFlowSequence(state, ownerIndent);
-  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
-  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
-    return parseBlockScalar(state, ownerIndent);
-  if (valueCode === CHAR_STAR) return parseAlias(state);
-
   if (isSequenceEntry(state)) {
     state.pos = lineStart;
-    return parseBlockSequence(state, lineIndent);
+    return parseBlockSequence(state, lineIndent, false, inherited?.tag);
   }
 
-  if (isExplicitKey(state) || hasMappingIndicatorInLine(state)) {
+  if (isExplicitKey(state) || opensImplicitKey(state)) {
     state.pos = lineStart;
-    return parseBlockMap(state, lineIndent);
+    return parseBlockMap(state, lineIndent, false, inherited?.tag);
   }
 
-  return resolveScalar(parsePlainScalar(state, ownerIndent, false));
+  return parseScalarOrFlowNode(
+    state,
+    ownerIndent,
+    mergeNodeProperties(state, inherited, own)?.tag
+  );
 };
 
 export const parseValue = (
   state: ParserState,
   ownerIndent: number,
-  lineIndent: number
+  lineIndent: number,
+  allowsIndentlessSequence: boolean,
+  inherited: NodeProperties | undefined
 ): unknown => {
   const lineStart = state.pos - lineIndent;
-  const anchor = readAnchorOrTag(state);
+  const own = readNodeProperties(state, false);
+
+  skipComment(state);
 
   return withAnchor(
     state,
-    anchor,
-    parseValueContent(state, ownerIndent, lineStart, lineIndent)
+    own?.anchor,
+    isAtLineBreakOrEnd(state)
+      ? parseNextLineValue(
+          state,
+          ownerIndent,
+          allowsIndentlessSequence,
+          mergeNodeProperties(state, inherited, own)
+        )
+      : parseValueContent(
+          state,
+          ownerIndent,
+          lineStart,
+          lineIndent,
+          own,
+          inherited
+        )
   );
 };

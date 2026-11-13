@@ -1,15 +1,12 @@
-import type { AnchorDeclaration, ParserState } from '../types.js';
+import type { AnchorDeclaration, NodeTag, ParserState } from '../types.js';
 import {
-  CHAR_AMPERSAND,
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_EXCLAMATION,
   CHAR_RIGHT_BRACE,
   CHAR_RIGHT_BRACKET,
   isBlank,
 } from './chars.js';
 import { syntaxError } from './errors.js';
-import { isBlankOrEnd, skipSpaces } from './navigation.js';
 
 const MIN_ALIAS_EXPANSION_LIMIT = 1_000_000;
 const ALIAS_EXPANSION_PER_INPUT_CHARACTER = 10;
@@ -21,7 +18,7 @@ const isAnchorNameEnd = (code: number): boolean =>
   code === CHAR_RIGHT_BRACE ||
   code === CHAR_COLON;
 
-const readAnchorName = (state: ParserState): string => {
+export const readAnchorName = (state: ParserState): string => {
   const start = state.pos;
 
   while (
@@ -33,11 +30,10 @@ const readAnchorName = (state: ParserState): string => {
   return state.src.slice(start, state.pos);
 };
 
-const skipTag = (state: ParserState): void => {
-  while (!isBlankOrEnd(state, state.pos)) state.pos++;
-};
-
-const declareAnchor = (state: ParserState, name: string): AnchorDeclaration => {
+export const declareAnchor = (
+  state: ParserState,
+  name: string
+): AnchorDeclaration => {
   state.anchors.nodes.set(name, null);
 
   return {
@@ -64,37 +60,17 @@ const aliasExpansionError = (
     aliasStart
   );
 
-export const readAnchorOrTag = (
-  state: ParserState
-): AnchorDeclaration | undefined => {
-  let name: string | undefined;
+export const parseAlias = (
+  state: ParserState,
+  tag: NodeTag | undefined
+): unknown => {
+  if (tag !== undefined)
+    throw syntaxError(
+      state,
+      `The tag ${tag.source} labels an alias: expected an alias without a tag`,
+      tag.start
+    );
 
-  while (state.pos < state.len) {
-    skipSpaces(state);
-
-    const code = state.src.charCodeAt(state.pos);
-
-    if (code === CHAR_EXCLAMATION) {
-      skipTag(state);
-      continue;
-    }
-
-    if (code !== CHAR_AMPERSAND) break;
-
-    if (name !== undefined)
-      throw syntaxError(
-        state,
-        `A node carries a second anchor after "&${name}": expected at most one anchor per node`
-      );
-
-    state.pos++;
-    name = readAnchorName(state);
-  }
-
-  return name ? declareAnchor(state, name) : undefined;
-};
-
-export const parseAlias = (state: ParserState): unknown => {
   const aliasStart = state.pos;
 
   state.pos++;
