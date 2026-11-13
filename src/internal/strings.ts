@@ -1,4 +1,4 @@
-import type { ParserState } from '../types.js';
+import type { BlockScalarHeader, ParserState } from '../types.js';
 import {
   CHAR_0,
   CHAR_1,
@@ -6,86 +6,209 @@ import {
   CHAR_BACKSLASH,
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_CR,
   CHAR_DQUOTE,
   CHAR_HASH,
   CHAR_LBRACE,
   CHAR_LBRACKET,
-  CHAR_LF,
   CHAR_LOWER_U,
   CHAR_LOWER_X,
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_PLUS,
-  CHAR_QUESTION,
   CHAR_RBRACE,
   CHAR_RBRACKET,
   CHAR_SPACE,
   CHAR_SQUOTE,
   CHAR_TAB,
   CHAR_UPPER_U,
+  hexDigitValue,
+  isBlank,
+  isLineBreak,
+  isSpaceOrTab,
+  LONE_SURROGATE,
+  MAX_CODE_POINT,
   SIMPLE_ESCAPE_MAP,
 } from './chars.js';
-import { peekLineIndent, skipComment, skipSpaces } from './navigation.js';
-import { trimEnd } from './scalars.js';
+import { syntaxError } from './errors.js';
+import {
+  countIndentSpaces,
+  isAtLineBreakOrEnd,
+  isBlankOrEnd,
+  isDocumentMarker,
+  lineBreakWidth,
+  skipComment,
+  skipSpaces,
+} from './navigation.js';
 
-export const parseSingleQuoted = (state: ParserState): string => {
-  state.pos++;
+const trimEnd = (text: string): string => {
+  let cursor = text.length;
 
-  let result = '';
-  let captureStart = state.pos;
+  while (cursor > 0 && isBlank(text.charCodeAt(cursor - 1))) cursor--;
 
-  while (state.pos < state.len) {
-    const code = state.src.charCodeAt(state.pos);
-
-    if (code !== CHAR_SQUOTE && code !== CHAR_LF && code !== CHAR_CR) {
-      state.pos++;
-      continue;
-    }
-
-    if (code === CHAR_SQUOTE) {
-      result += state.src.slice(captureStart, state.pos);
-
-      if (state.src.charCodeAt(state.pos + 1) === CHAR_SQUOTE) {
-        result += "'";
-        state.pos += 2;
-        captureStart = state.pos;
-        continue;
-      }
-
-      state.pos++;
-      return result;
-    }
-
-    // CHAR_LF or CHAR_CR (fold newline)
-    result += state.src.slice(captureStart, state.pos);
-    if (code === CHAR_CR) state.pos++;
-    if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_LF)
-      state.pos++;
-
-    let emptyLineCount = 0;
-
-    while (state.pos < state.len) {
-      const whitespaceCode = state.src.charCodeAt(state.pos);
-
-      if (whitespaceCode === CHAR_LF) emptyLineCount++;
-      else if (whitespaceCode === CHAR_CR) {
-        emptyLineCount++;
-        if (state.src.charCodeAt(state.pos + 1) === CHAR_LF) state.pos++;
-      } else if (whitespaceCode !== CHAR_SPACE && whitespaceCode !== CHAR_TAB)
-        break;
-
-      state.pos++;
-    }
-
-    result += emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' ';
-    captureStart = state.pos;
-  }
-
-  return result + state.src.slice(captureStart, state.pos);
+  return cursor < text.length ? text.slice(0, cursor) : text;
 };
 
-export const parseDoubleQuoted = (state: ParserState): string => {
+const rejectDocumentMarker = (state: ParserState): void => {
+  if (isDocumentMarker(state, state.pos))
+    throw syntaxError(
+      state,
+      'A document marker interrupts a quoted scalar: expected the closing quote before the "---" or "..." line'
+    );
+};
+
+const foldQuotedLineBreaks = (state: ParserState): string => {
+  let emptyLineCount = -1;
+
+  while (state.pos < state.len) {
+    const code = state.src.charCodeAt(state.pos);
+
+    if (isLineBreak(code)) {
+      state.pos += lineBreakWidth(state, state.pos);
+      emptyLineCount++;
+      rejectDocumentMarker(state);
+      continue;
+    }
+
+    if (!isSpaceOrTab(code)) break;
+
+    state.pos++;
+  }
+
+  return emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' ';
+};
+
+const requireEscapeWidth = (
+  state: ParserState,
+  escapeStart: number,
+  width: number
+): void => {
+  if (state.pos + width <= state.len) return;
+
+  throw syntaxError(
+    state,
+    `The input ends inside the escape sequence "${state.src.slice(escapeStart, state.pos)}": expected ${width} more character${width === 1 ? '' : 's'}`,
+    escapeStart
+  );
+};
+
+const readHexEscape = (
+  state: ParserState,
+  escapeStart: number,
+  width: number
+): number => {
+  requireEscapeWidth(state, escapeStart, width);
+
+  const digitsEnd = state.pos + width;
+  let value = 0;
+
+  for (let index = state.pos; index < digitsEnd; index++) {
+    const digit = hexDigitValue(state.src.charCodeAt(index));
+
+    if (digit === -1)
+      throw syntaxError(
+        state,
+        `The escape sequence "${state.src.slice(escapeStart, state.pos)}" is malformed: expected exactly ${width} hexadecimal digits after it`,
+        escapeStart
+      );
+
+    value = value * 16 + digit;
+  }
+
+  state.pos = digitsEnd;
+
+  return value;
+};
+
+const readUtf16Escapes = (state: ParserState, escapeStart: number): string => {
+  let decoded = String.fromCharCode(readHexEscape(state, escapeStart, 4));
+
+  while (
+    state.src.charCodeAt(state.pos) === CHAR_BACKSLASH &&
+    state.src.charCodeAt(state.pos + 1) === CHAR_LOWER_U
+  ) {
+    const nextEscapeStart = state.pos;
+
+    state.pos += 2;
+    decoded += String.fromCharCode(readHexEscape(state, nextEscapeStart, 4));
+  }
+
+  if (LONE_SURROGATE.test(decoded))
+    throw syntaxError(
+      state,
+      'A "\\u" escape decodes to half of a surrogate pair: expected a high surrogate escape followed directly by a low surrogate escape',
+      escapeStart
+    );
+
+  return decoded;
+};
+
+const readCodePointEscape = (
+  state: ParserState,
+  escapeStart: number
+): string => {
+  const codePoint = readHexEscape(state, escapeStart, 8);
+
+  if (codePoint > MAX_CODE_POINT)
+    throw syntaxError(
+      state,
+      `The "\\U" escape names 0x${codePoint.toString(16).toUpperCase()}: expected a code point no higher than 0x10FFFF`,
+      escapeStart
+    );
+
+  const decoded = String.fromCodePoint(codePoint);
+
+  if (LONE_SURROGATE.test(decoded))
+    throw syntaxError(
+      state,
+      'The "\\U" escape names half of a surrogate pair: expected a code point outside 0xD800 to 0xDFFF',
+      escapeStart
+    );
+
+  return decoded;
+};
+
+const readEscapedLineBreak = (state: ParserState): string => {
+  state.pos += lineBreakWidth(state, state.pos);
+
+  rejectDocumentMarker(state);
+  skipSpaces(state);
+
+  return '';
+};
+
+const readEscape = (state: ParserState): string => {
+  const escapeStart = state.pos;
+
+  state.pos++;
+  requireEscapeWidth(state, escapeStart, 1);
+
+  const code = state.src.charCodeAt(state.pos);
+
+  if (isLineBreak(code)) return readEscapedLineBreak(state);
+
+  const simpleEscape = code < 128 ? SIMPLE_ESCAPE_MAP[code] : undefined;
+
+  state.pos++;
+
+  if (simpleEscape !== undefined) return simpleEscape;
+
+  if (code === CHAR_LOWER_X)
+    return String.fromCharCode(readHexEscape(state, escapeStart, 2));
+
+  if (code === CHAR_LOWER_U) return readUtf16Escapes(state, escapeStart);
+
+  if (code === CHAR_UPPER_U) return readCodePointEscape(state, escapeStart);
+
+  throw syntaxError(
+    state,
+    `Unknown escape sequence "\\${state.src.charAt(escapeStart + 1)}": expected one of \\0 \\a \\b \\t \\n \\v \\f \\r \\e \\" \\/ \\\\ \\N \\_ \\L \\P, an escaped space, tab, or line break, or a \\x, \\u, or \\U hexadecimal escape`,
+    escapeStart
+  );
+};
+
+export const parseSingleQuoted = (state: ParserState): string => {
+  const openingQuote = state.pos;
+
   state.pos++;
 
   let result = '';
@@ -94,113 +217,74 @@ export const parseDoubleQuoted = (state: ParserState): string => {
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
 
-    if (
-      code !== CHAR_DQUOTE &&
-      code !== CHAR_BACKSLASH &&
-      code !== CHAR_LF &&
-      code !== CHAR_CR
-    ) {
+    if (code !== CHAR_SQUOTE && !isLineBreak(code)) {
       state.pos++;
       continue;
     }
 
-    if (code === CHAR_DQUOTE) {
-      result += state.src.slice(captureStart, state.pos);
-      state.pos++;
-      return result;
-    }
+    result += state.src.slice(captureStart, state.pos);
 
-    if (code === CHAR_BACKSLASH) {
-      result += state.src.slice(captureStart, state.pos);
-      state.pos++;
-
-      const escapeCode = state.src.charCodeAt(state.pos);
-
-      if (escapeCode === CHAR_LF || escapeCode === CHAR_CR) {
-        if (escapeCode === CHAR_CR) state.pos++;
-
-        if (
-          state.pos < state.len &&
-          state.src.charCodeAt(state.pos) === CHAR_LF
-        )
-          state.pos++;
-
-        while (
-          state.pos < state.len &&
-          (state.src.charCodeAt(state.pos) === CHAR_SPACE ||
-            state.src.charCodeAt(state.pos) === CHAR_TAB)
-        )
-          state.pos++;
-
-        captureStart = state.pos;
-        continue;
-      }
-
-      const mapped =
-        escapeCode < 128 ? SIMPLE_ESCAPE_MAP[escapeCode] : undefined;
-
-      if (mapped !== undefined) {
-        result += mapped;
-        state.pos++;
-      } else if (escapeCode === CHAR_LOWER_X) {
-        state.pos++;
-        result += String.fromCharCode(
-          Number.parseInt(state.src.slice(state.pos, state.pos + 2), 16)
-        );
-        state.pos += 2;
-      } else if (escapeCode === CHAR_LOWER_U) {
-        state.pos++;
-        result += String.fromCharCode(
-          Number.parseInt(state.src.slice(state.pos, state.pos + 4), 16)
-        );
-        state.pos += 4;
-      } else if (escapeCode === CHAR_UPPER_U) {
-        state.pos++;
-        result += String.fromCodePoint(
-          Number.parseInt(state.src.slice(state.pos, state.pos + 8), 16)
-        );
-        state.pos += 8;
-      } else {
-        result += state.src[state.pos];
-        state.pos++;
-      }
-
+    if (code !== CHAR_SQUOTE) {
+      result += foldQuotedLineBreaks(state);
       captureStart = state.pos;
       continue;
     }
 
-    // CHAR_LF or CHAR_CR (fold newline)
-    result += state.src.slice(captureStart, state.pos);
-
-    if (code === CHAR_CR) state.pos++;
-    if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_LF)
+    if (state.src.charCodeAt(state.pos + 1) !== CHAR_SQUOTE) {
       state.pos++;
-
-    let emptyLineCount = 0;
-
-    while (state.pos < state.len) {
-      const whitespaceCode = state.src.charCodeAt(state.pos);
-
-      if (whitespaceCode === CHAR_LF) emptyLineCount++;
-      else if (whitespaceCode === CHAR_CR) {
-        emptyLineCount++;
-        if (state.src.charCodeAt(state.pos + 1) === CHAR_LF) state.pos++;
-      } else if (whitespaceCode !== CHAR_SPACE && whitespaceCode !== CHAR_TAB)
-        break;
-
-      state.pos++;
+      return result;
     }
 
-    result += emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' ';
+    result += "'";
+    state.pos += 2;
     captureStart = state.pos;
   }
 
-  return result + state.src.slice(captureStart, state.pos);
+  throw syntaxError(
+    state,
+    `Unterminated single-quoted scalar: expected a closing "'" before the end of input`,
+    openingQuote
+  );
+};
+
+export const parseDoubleQuoted = (state: ParserState): string => {
+  const openingQuote = state.pos;
+
+  state.pos++;
+
+  let result = '';
+  let captureStart = state.pos;
+
+  while (state.pos < state.len) {
+    const code = state.src.charCodeAt(state.pos);
+
+    if (code !== CHAR_DQUOTE && code !== CHAR_BACKSLASH && !isLineBreak(code)) {
+      state.pos++;
+      continue;
+    }
+
+    result += state.src.slice(captureStart, state.pos);
+
+    if (code === CHAR_DQUOTE) {
+      state.pos++;
+      return result;
+    }
+
+    result +=
+      code === CHAR_BACKSLASH ? readEscape(state) : foldQuotedLineBreaks(state);
+    captureStart = state.pos;
+  }
+
+  throw syntaxError(
+    state,
+    `Unterminated double-quoted scalar: expected a closing '"' before the end of input`,
+    openingQuote
+  );
 };
 
 const foldBlockLines = (contentLines: string[]): string => {
   let result = '';
-  let prevMoreIndented = false;
+  let previousLineMoreIndented = false;
 
   for (let lineIndex = 0; lineIndex < contentLines.length; lineIndex++) {
     const line = contentLines[lineIndex];
@@ -210,319 +294,296 @@ const foldBlockLines = (contentLines: string[]): string => {
       continue;
     }
 
-    if (line[0] === ' ' || line[0] === '\t') {
+    if (isSpaceOrTab(line.charCodeAt(0))) {
       if (result.length > 0 && !result.endsWith('\n')) result += '\n';
       result += line;
       if (lineIndex < contentLines.length - 1) result += '\n';
-      prevMoreIndented = true;
+      previousLineMoreIndented = true;
       continue;
     }
 
-    if (
-      lineIndex > 0 &&
-      !prevMoreIndented &&
-      contentLines[lineIndex - 1] !== ''
-    ) {
-      result += ' ';
-    } else if (prevMoreIndented) {
-      result += '\n';
-    }
+    if (previousLineMoreIndented) result += '\n';
+    else if (lineIndex > 0 && contentLines[lineIndex - 1] !== '') result += ' ';
 
     result += line;
-    prevMoreIndented = false;
+    previousLineMoreIndented = false;
   }
 
   return result;
 };
 
-export const parseBlockScalar = (
-  state: ParserState,
-  baseIndent: number
-): string => {
-  const isLiteral = state.src.charCodeAt(state.pos) === CHAR_PIPE;
+const detectContentIndent = (state: ParserState): number => {
+  let cursor = state.pos;
 
-  state.pos++;
+  while (cursor < state.len) {
+    const lineStart = cursor;
 
-  let chomp: '' | '-' | '+' = '';
+    cursor += countIndentSpaces(state, lineStart);
+
+    if (cursor >= state.len) return -1;
+
+    const code = state.src.charCodeAt(cursor);
+
+    if (!isLineBreak(code))
+      return isDocumentMarker(state, lineStart) ? -1 : cursor - lineStart;
+
+    cursor += lineBreakWidth(state, cursor);
+  }
+
+  return -1;
+};
+
+const readBlockScalarHeader = (state: ParserState): BlockScalarHeader => {
+  let chomp: BlockScalarHeader['chomp'] = '';
   let explicitIndent = 0;
 
   while (state.pos < state.len) {
     const headerCode = state.src.charCodeAt(state.pos);
+    const isChomp = headerCode === CHAR_MINUS || headerCode === CHAR_PLUS;
+    const isIndent = headerCode >= CHAR_1 && headerCode <= CHAR_9;
 
-    if (
-      headerCode === CHAR_LF ||
-      headerCode === CHAR_CR ||
-      headerCode === CHAR_HASH
-    )
-      break;
+    if (!(isChomp || isIndent)) break;
 
-    if (headerCode === CHAR_MINUS) chomp = '-';
-    else if (headerCode === CHAR_PLUS) chomp = '+';
-    else if (headerCode >= CHAR_1 && headerCode <= CHAR_9)
-      explicitIndent = headerCode - CHAR_0;
-    else if (headerCode !== CHAR_SPACE && headerCode !== CHAR_TAB) break;
+    if ((isChomp && chomp !== '') || (isIndent && explicitIndent !== 0))
+      throw syntaxError(
+        state,
+        'A block scalar header repeats an indicator: expected at most one chomping indicator ("+" or "-") and one indentation digit from 1 to 9'
+      );
+
+    if (isChomp) chomp = headerCode === CHAR_MINUS ? '-' : '+';
+    else explicitIndent = headerCode - CHAR_0;
 
     state.pos++;
   }
 
+  const indicatorsEnd = state.pos;
+
   skipSpaces(state);
-  skipComment(state);
 
-  if (state.pos < state.len) {
-    const newlineAfterHeader = state.src.charCodeAt(state.pos);
+  if (state.pos > indicatorsEnd) skipComment(state);
 
-    if (newlineAfterHeader === CHAR_CR || newlineAfterHeader === CHAR_LF) {
-      if (
-        newlineAfterHeader === CHAR_CR &&
-        state.src.charCodeAt(state.pos + 1) === CHAR_LF
-      )
-        state.pos++;
+  if (!isAtLineBreakOrEnd(state))
+    throw syntaxError(
+      state,
+      'A block scalar header holds an unexpected character: expected only a chomping indicator ("+" or "-"), an indentation digit from 1 to 9, and an optional comment'
+    );
 
-      state.pos++;
-    }
-  }
+  if (state.pos < state.len) state.pos += lineBreakWidth(state, state.pos);
 
-  let contentIndent = 0;
-  if (explicitIndent > 0) {
-    contentIndent = baseIndent + explicitIndent;
-  } else {
-    const savedPos = state.pos;
+  return { chomp, explicitIndent };
+};
 
-    while (state.pos < state.len) {
-      let spaces = 0;
-
-      while (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) === CHAR_SPACE
-      ) {
-        spaces++;
-        state.pos++;
-      }
-      if (state.pos < state.len) {
-        const indentLineCode = state.src.charCodeAt(state.pos);
-
-        if (indentLineCode !== CHAR_LF && indentLineCode !== CHAR_CR) {
-          contentIndent = spaces;
-          break;
-        }
-
-        if (indentLineCode === CHAR_CR) state.pos++;
-
-        if (
-          state.pos < state.len &&
-          state.src.charCodeAt(state.pos) === CHAR_LF
-        )
-          state.pos++;
-      }
-    }
-
-    state.pos = savedPos;
-  }
-
-  if (contentIndent === 0) {
-    if (chomp === '+') return '\n';
-    return '';
-  }
-
+const readBlockScalarLines = (
+  state: ParserState,
+  contentIndent: number
+): string[] => {
   const lines: string[] = [];
 
   while (state.pos < state.len) {
     const lineStart = state.pos;
-    let spaces = 0;
+    const spaces = countIndentSpaces(state, lineStart);
 
-    while (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_SPACE
-    ) {
-      spaces++;
-      state.pos++;
-    }
+    state.pos += spaces;
 
     if (state.pos >= state.len) {
       lines.push('');
       break;
     }
 
-    const lineEndCode = state.src.charCodeAt(state.pos);
-
-    if (lineEndCode === CHAR_LF || lineEndCode === CHAR_CR) {
+    if (isAtLineBreakOrEnd(state)) {
       lines.push('');
-
-      if (
-        lineEndCode === CHAR_CR &&
-        state.src.charCodeAt(state.pos + 1) === CHAR_LF
-      )
-        state.pos++;
-
-      state.pos++;
+      state.pos += lineBreakWidth(state, state.pos);
       continue;
     }
 
-    if (spaces < contentIndent) {
+    if (spaces < contentIndent || isDocumentMarker(state, lineStart)) {
       state.pos = lineStart;
       break;
     }
 
     const prefix =
       spaces > contentIndent ? ' '.repeat(spaces - contentIndent) : '';
-
     const lineContentStart = state.pos;
 
-    while (state.pos < state.len) {
-      const contentCode = state.src.charCodeAt(state.pos);
-
-      if (contentCode === CHAR_LF || contentCode === CHAR_CR) break;
-      state.pos++;
-    }
+    while (!isAtLineBreakOrEnd(state)) state.pos++;
 
     lines.push(prefix + state.src.slice(lineContentStart, state.pos));
 
-    if (state.pos < state.len) {
-      if (
-        state.src.charCodeAt(state.pos) === CHAR_CR &&
-        state.src.charCodeAt(state.pos + 1) === CHAR_LF
-      )
-        state.pos++;
-
-      state.pos++;
-    }
+    if (state.pos < state.len) state.pos += lineBreakWidth(state, state.pos);
   }
 
-  let trailingEmpties = 0;
+  return lines;
+};
+
+export const parseBlockScalar = (
+  state: ParserState,
+  parentIndent: number
+): string => {
+  const isLiteral = state.src.charCodeAt(state.pos) === CHAR_PIPE;
+
+  state.pos++;
+
+  const { chomp, explicitIndent } = readBlockScalarHeader(state);
+  const contentIndent =
+    explicitIndent > 0
+      ? Math.max(parentIndent, 0) + explicitIndent
+      : detectContentIndent(state);
+
+  if (contentIndent <= parentIndent) return chomp === '+' ? '\n' : '';
+
+  const lines = readBlockScalarLines(state, contentIndent);
+  let trailingEmptyLines = 0;
 
   for (let lineIndex = lines.length - 1; lineIndex >= 0; lineIndex--) {
-    if (lines[lineIndex] === '') trailingEmpties++;
+    if (lines[lineIndex] === '') trailingEmptyLines++;
     else break;
   }
 
   const contentLines =
-    trailingEmpties > 0
-      ? lines.slice(0, lines.length - trailingEmpties)
+    trailingEmptyLines > 0
+      ? lines.slice(0, lines.length - trailingEmptyLines)
       : lines;
-
   const content = isLiteral
     ? contentLines.join('\n')
     : foldBlockLines(contentLines);
 
   if (chomp === '-') return content;
-  if (chomp === '+') return `${content}\n${'\n'.repeat(trailingEmpties)}`;
+  if (chomp === '+') return `${content}\n${'\n'.repeat(trailingEmptyLines)}`;
   return `${content}\n`;
+};
+
+const endsPlainScalarAtColon = (
+  state: ParserState,
+  colonPosition: number,
+  inFlow: boolean
+): boolean => {
+  if (!inFlow) return isBlankOrEnd(state, colonPosition + 1);
+  if (colonPosition + 1 >= state.len) return true;
+
+  const afterColon = state.src.charCodeAt(colonPosition + 1);
+
+  return (
+    afterColon === CHAR_SPACE ||
+    afterColon === CHAR_COMMA ||
+    afterColon === CHAR_RBRACKET ||
+    afterColon === CHAR_RBRACE
+  );
+};
+
+const isFlowIndicator = (code: number): boolean =>
+  code === CHAR_COMMA ||
+  code === CHAR_RBRACKET ||
+  code === CHAR_RBRACE ||
+  code === CHAR_LBRACE ||
+  code === CHAR_LBRACKET;
+
+export const findPlainLineEnd = (
+  state: ParserState,
+  start: number,
+  inFlow: boolean
+): number => {
+  let cursor = start;
+
+  while (cursor < state.len) {
+    const code = state.src.charCodeAt(cursor);
+
+    if (isLineBreak(code)) break;
+
+    if (code === CHAR_HASH && isSpaceOrTab(state.src.charCodeAt(cursor - 1)))
+      break;
+
+    if (code === CHAR_COLON && endsPlainScalarAtColon(state, cursor, inFlow))
+      break;
+
+    if (inFlow && isFlowIndicator(code)) break;
+
+    cursor++;
+  }
+
+  return cursor;
 };
 
 const capturePlainLine = (state: ParserState, inFlow: boolean): string => {
   const captureStart = state.pos;
-  while (state.pos < state.len) {
-    const charCode = state.src.charCodeAt(state.pos);
 
-    if (charCode === CHAR_LF || charCode === CHAR_CR) break;
-
-    if (charCode === CHAR_HASH && state.pos > 0) {
-      const prevCode = state.src.charCodeAt(state.pos - 1);
-
-      if (prevCode === CHAR_SPACE || prevCode === CHAR_TAB) break;
-    }
-
-    if (charCode === CHAR_COLON) {
-      const afterColon =
-        state.pos + 1 >= state.len ? -1 : state.src.charCodeAt(state.pos + 1);
-
-      if (
-        !inFlow &&
-        (afterColon === -1 ||
-          afterColon === CHAR_SPACE ||
-          afterColon === CHAR_LF ||
-          afterColon === CHAR_CR ||
-          afterColon === CHAR_TAB)
-      )
-        break;
-
-      if (
-        inFlow &&
-        (afterColon === -1 ||
-          afterColon === CHAR_SPACE ||
-          afterColon === CHAR_COMMA ||
-          afterColon === CHAR_RBRACKET ||
-          afterColon === CHAR_RBRACE)
-      )
-        break;
-    }
-
-    if (
-      inFlow &&
-      (charCode === CHAR_COMMA ||
-        charCode === CHAR_RBRACKET ||
-        charCode === CHAR_RBRACE ||
-        charCode === CHAR_LBRACE ||
-        charCode === CHAR_LBRACKET)
-    )
-      break;
-
-    state.pos++;
-  }
+  state.pos = findPlainLineEnd(state, captureStart, inFlow);
 
   return state.src.slice(captureStart, state.pos);
 };
 
+const isPlainContinuation = (
+  state: ParserState,
+  lineStart: number,
+  contentStart: number,
+  ownerIndent: number,
+  inFlow: boolean
+): boolean => {
+  if (contentStart >= state.len) return false;
+
+  const code = state.src.charCodeAt(contentStart);
+
+  if (code === CHAR_HASH || isDocumentMarker(state, lineStart)) return false;
+
+  if (code === CHAR_COLON && isBlankOrEnd(state, contentStart + 1))
+    return false;
+
+  if (
+    inFlow &&
+    (code === CHAR_COMMA || code === CHAR_RBRACKET || code === CHAR_RBRACE)
+  )
+    return false;
+
+  const indent = countIndentSpaces(state, lineStart);
+
+  if (indent > ownerIndent) return true;
+
+  if (inFlow)
+    throw syntaxError(
+      state,
+      `A flow collection line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`,
+      contentStart
+    );
+
+  if (state.src.charCodeAt(lineStart + indent) === CHAR_TAB)
+    throw syntaxError(
+      state,
+      'A tab indents a plain scalar line: expected spaces, since YAML forbids tabs as indentation',
+      lineStart + indent
+    );
+
+  return false;
+};
+
+export const parsePlainKey = (state: ParserState): string =>
+  trimEnd(capturePlainLine(state, false));
+
 export const parsePlainScalar = (
   state: ParserState,
-  minIndent: number,
+  ownerIndent: number,
   inFlow: boolean
 ): string => {
   let result = capturePlainLine(state, inFlow);
 
   while (state.pos < state.len) {
-    const savedPos = state.pos;
-    let emptyLineCount = 0;
+    if (!isLineBreak(state.src.charCodeAt(state.pos))) break;
 
-    while (state.pos < state.len) {
-      const whitespaceCode = state.src.charCodeAt(state.pos);
+    let cursor = state.pos;
+    let lineStart = cursor;
+    let emptyLineCount = -1;
 
-      if (whitespaceCode === CHAR_LF) emptyLineCount++;
-      else if (whitespaceCode === CHAR_CR) {
-        emptyLineCount++;
-        if (state.src.charCodeAt(state.pos + 1) === CHAR_LF) state.pos++;
-      } else if (whitespaceCode !== CHAR_SPACE && whitespaceCode !== CHAR_TAB)
-        break;
+    do {
+      cursor += lineBreakWidth(state, cursor);
+      emptyLineCount++;
+      lineStart = cursor;
 
-      state.pos++;
-    }
+      while (isSpaceOrTab(state.src.charCodeAt(cursor))) cursor++;
+    } while (isLineBreak(state.src.charCodeAt(cursor)));
 
-    const lineIndent = peekLineIndent(state);
-
-    if (state.pos >= state.len || lineIndent <= minIndent) {
-      state.pos = savedPos;
+    if (!isPlainContinuation(state, lineStart, cursor, ownerIndent, inFlow))
       break;
-    }
 
-    const peekedCode = state.src.charCodeAt(state.pos);
-
-    if (peekedCode === CHAR_HASH) {
-      state.pos = savedPos;
-      break;
-    }
-
-    if (
-      !inFlow &&
-      (peekedCode === CHAR_MINUS ||
-        peekedCode === CHAR_COLON ||
-        peekedCode === CHAR_QUESTION)
-    ) {
-      const indicatorNext =
-        state.pos + 1 >= state.len ? -1 : state.src.charCodeAt(state.pos + 1);
-
-      if (
-        indicatorNext === -1 ||
-        indicatorNext === CHAR_SPACE ||
-        indicatorNext === CHAR_LF ||
-        indicatorNext === CHAR_CR ||
-        indicatorNext === CHAR_TAB
-      ) {
-        state.pos = savedPos;
-        break;
-      }
-    }
-
-    result += emptyLineCount > 1 ? '\n'.repeat(emptyLineCount - 1) : ' ';
+    result = `${trimEnd(result)}${emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' '}`;
+    state.pos = cursor;
     result += capturePlainLine(state, inFlow);
   }
 

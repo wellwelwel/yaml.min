@@ -1,208 +1,319 @@
-import type { ParserState } from '../types.js';
+import type { FlowCollection, ParserState } from '../types.js';
+import { parseAlias, readAnchorOrTag, withAnchor } from './anchors.js';
 import {
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_CR,
   CHAR_DQUOTE,
+  CHAR_HASH,
   CHAR_LBRACE,
   CHAR_LBRACKET,
-  CHAR_LF,
   CHAR_QUESTION,
   CHAR_RBRACE,
   CHAR_RBRACKET,
   CHAR_SPACE,
   CHAR_SQUOTE,
   CHAR_STAR,
-  CHAR_TAB,
+  isBlank,
+  isLineBreak,
+  isSpaceOrTab,
 } from './chars.js';
+import { syntaxError } from './errors.js';
+import { setMapKey } from './keys.js';
 import {
-  parseAlias,
-  readAnchorOrTag,
-  skipBlanksAndComments,
+  countIndentSpaces,
+  isDocumentMarker,
+  skipComment,
   skipSpaces,
 } from './navigation.js';
-import { resolveScalar, setMapKey } from './scalars.js';
+import { resolveScalar } from './scalars.js';
 import {
   parseDoubleQuoted,
   parsePlainScalar,
   parseSingleQuoted,
 } from './strings.js';
 
-export const parseFlowSeq = (state: ParserState): unknown[] => {
-  state.pos++;
+const FLOW_SEQUENCE: FlowCollection = {
+  name: 'flow sequence',
+  open: '[',
+  closeCode: CHAR_RBRACKET,
+  foreignCloseCode: CHAR_RBRACE,
+};
 
-  const result: unknown[] = [];
+const FLOW_MAPPING: FlowCollection = {
+  name: 'flow mapping',
+  open: '{',
+  closeCode: CHAR_RBRACE,
+  foreignCloseCode: CHAR_RBRACKET,
+};
 
-  skipBlanksAndComments(state);
+const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
+  const lineStart = state.pos;
+  const indent = countIndentSpaces(state, lineStart);
+  let cursor = lineStart + indent;
 
-  while (
-    state.pos < state.len &&
-    state.src.charCodeAt(state.pos) !== CHAR_RBRACKET
-  ) {
-    readAnchorOrTag(state);
+  while (isSpaceOrTab(state.src.charCodeAt(cursor))) cursor++;
 
-    const anchor = state.lastAnchor;
+  if (cursor >= state.len) return;
 
-    skipSpaces(state);
+  const code = state.src.charCodeAt(cursor);
 
-    const value = parseFlowValue(state);
+  if (
+    isLineBreak(code) ||
+    code === CHAR_HASH ||
+    code === CHAR_RBRACKET ||
+    code === CHAR_RBRACE
+  )
+    return;
 
-    if (anchor) state.anchors.set(anchor, value);
+  if (isDocumentMarker(state, lineStart))
+    throw syntaxError(
+      state,
+      'A document marker interrupts a flow collection: expected the collection to close before the "---" or "..." line',
+      lineStart
+    );
 
-    result.push(value);
+  if (indent <= ownerIndent)
+    throw syntaxError(
+      state,
+      `A flow collection line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`,
+      cursor
+    );
+};
 
-    skipBlanksAndComments(state);
+const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
+  while (state.pos < state.len) {
+    const code = state.src.charCodeAt(state.pos);
 
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COMMA
-    ) {
+    if (isSpaceOrTab(code)) {
       state.pos++;
-      skipBlanksAndComments(state);
+      continue;
     }
+
+    if (code === CHAR_HASH) {
+      skipComment(state);
+      continue;
+    }
+
+    if (!isLineBreak(code)) return;
+
+    state.pos++;
+    checkFlowLine(state, ownerIndent);
   }
-
-  if (state.pos < state.len) state.pos++;
-
-  return result;
 };
 
-export const parseFlowMap = (state: ParserState): Record<string, unknown> => {
-  state.pos++;
-
-  const result: Record<string, unknown> = {};
-
-  skipBlanksAndComments(state);
-
-  while (
-    state.pos < state.len &&
-    state.src.charCodeAt(state.pos) !== CHAR_RBRACE
-  ) {
-    if (state.src.charCodeAt(state.pos) === CHAR_QUESTION) {
-      const questionNext = state.src.charCodeAt(state.pos + 1);
-
-      if (
-        questionNext === CHAR_SPACE ||
-        questionNext === CHAR_TAB ||
-        questionNext === CHAR_LF ||
-        questionNext === CHAR_CR
-      ) {
-        state.pos++;
-        skipBlanksAndComments(state);
-      }
-    }
-
-    readAnchorOrTag(state);
-
-    const keyAnchor = state.lastAnchor;
-
-    skipSpaces(state);
-
-    const key = parseFlowScalarKey(state);
-
-    if (keyAnchor) state.anchors.set(keyAnchor, key);
-
-    skipBlanksAndComments(state);
-
-    let value: unknown = null;
-
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COLON
-    ) {
-      state.pos++;
-      skipBlanksAndComments(state);
-
-      if (state.pos < state.len) {
-        const valueCode = state.src.charCodeAt(state.pos);
-
-        if (valueCode !== CHAR_COMMA && valueCode !== CHAR_RBRACE) {
-          readAnchorOrTag(state);
-
-          const valAnchor = state.lastAnchor;
-
-          skipSpaces(state);
-
-          value = parseFlowValue(state);
-
-          if (valAnchor) state.anchors.set(valAnchor, value);
-        }
-      }
-    }
-
-    setMapKey(result, String(key), value);
-    skipBlanksAndComments(state);
-
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COMMA
-    ) {
-      state.pos++;
-      skipBlanksAndComments(state);
-    }
-  }
-
-  if (state.pos < state.len) state.pos++;
-
-  return result;
-};
-
-export const parseFlowScalarKey = (state: ParserState): unknown => {
-  const code = state.src.charCodeAt(state.pos);
-
-  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LBRACKET) return parseFlowSeq(state);
-  if (code === CHAR_LBRACE) return parseFlowMap(state);
-  if (code === CHAR_STAR) return parseAlias(state);
-  return resolveScalar(parsePlainScalar(state, 0, true));
-};
-
-export const parseFlowValue = (state: ParserState): unknown => {
-  skipBlanksAndComments(state);
+const isFlowTerminator = (state: ParserState): boolean => {
+  if (state.pos >= state.len) return true;
 
   const code = state.src.charCodeAt(state.pos);
 
-  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LBRACKET) return parseFlowSeq(state);
-  if (code === CHAR_LBRACE) return parseFlowMap(state);
-  if (code === CHAR_STAR) return parseAlias(state);
+  return code === CHAR_COMMA || code === CHAR_RBRACKET || code === CHAR_RBRACE;
+};
 
-  const raw = parsePlainScalar(state, 0, true);
+const unclosedError = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number
+): SyntaxError =>
+  syntaxError(
+    state,
+    `Unclosed ${collection.name}: expected "${String.fromCharCode(collection.closeCode)}" to close the "${collection.open}" before the end of input`,
+    openedAt
+  );
 
+const unexpectedError = (
+  state: ParserState,
+  collection: FlowCollection,
+  expected: string
+): SyntaxError =>
+  syntaxError(
+    state,
+    `Unexpected "${state.src.charAt(state.pos)}" in a ${collection.name}: expected ${expected}`
+  );
+
+const openFlowEntry = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): boolean => {
+  skipFlowSeparation(state, ownerIndent);
+
+  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
+
+  const code = state.src.charCodeAt(state.pos);
+
+  if (code === collection.closeCode) {
+    state.pos++;
+    return false;
+  }
+
+  if (code === collection.foreignCloseCode || code === CHAR_COMMA)
+    throw unexpectedError(
+      state,
+      collection,
+      `an entry or "${String.fromCharCode(collection.closeCode)}"`
+    );
+
+  return true;
+};
+
+const closeFlowEntry = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): boolean => {
+  skipFlowSeparation(state, ownerIndent);
+
+  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
+
+  const code = state.src.charCodeAt(state.pos);
+
+  if (code !== CHAR_COMMA && code !== collection.closeCode)
+    throw unexpectedError(
+      state,
+      collection,
+      `"," or "${String.fromCharCode(collection.closeCode)}"`
+    );
+
+  state.pos++;
+
+  return code === CHAR_COMMA;
+};
+
+const isImplicitPairColon = (state: ParserState): boolean => {
+  if (state.src.charCodeAt(state.pos) !== CHAR_COLON) return false;
+  if (state.pos + 1 >= state.len) return true;
+
+  const afterColon = state.src.charCodeAt(state.pos + 1);
+
+  return (
+    afterColon === CHAR_SPACE ||
+    afterColon === CHAR_COMMA ||
+    afterColon === CHAR_RBRACKET
+  );
+};
+
+const completeImplicitPair = (
+  state: ParserState,
+  ownerIndent: number,
+  key: unknown
+): unknown => {
   skipSpaces(state);
 
-  if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_COLON) {
-    const afterColon =
-      state.pos + 1 >= state.len ? -1 : state.src.charCodeAt(state.pos + 1);
+  if (!isImplicitPairColon(state)) return key;
 
-    if (
-      afterColon === -1 ||
-      afterColon === CHAR_SPACE ||
-      afterColon === CHAR_COMMA ||
-      afterColon === CHAR_RBRACKET
-    ) {
-      const key = String(resolveScalar(raw));
+  const pair: Record<string, unknown> = {};
 
-      state.pos++;
-      skipBlanksAndComments(state);
+  state.pos++;
+  skipFlowSeparation(state, ownerIndent);
+  setMapKey(pair, String(key), parseFlowValue(state, ownerIndent));
 
-      const pair: Record<string, unknown> = {};
+  return pair;
+};
 
-      const isTerminator =
-        state.pos >= state.len ||
-        state.src.charCodeAt(state.pos) === CHAR_COMMA ||
-        state.src.charCodeAt(state.pos) === CHAR_RBRACKET ||
-        state.src.charCodeAt(state.pos) === CHAR_RBRACE;
+const parseFlowNode = (
+  state: ParserState,
+  ownerIndent: number,
+  allowsImplicitPair: boolean
+): unknown => {
+  const code = state.src.charCodeAt(state.pos);
 
-      const value = isTerminator ? null : parseFlowValue(state);
+  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
+  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
+  if (code === CHAR_LBRACKET) return parseFlowSeq(state, ownerIndent);
+  if (code === CHAR_LBRACE) return parseFlowMap(state, ownerIndent);
+  if (code === CHAR_STAR) return parseAlias(state);
+  if (isFlowTerminator(state)) return null;
 
-      setMapKey(pair, key, value);
+  const scalar = resolveScalar(parsePlainScalar(state, ownerIndent, true));
 
-      return pair;
-    }
+  return allowsImplicitPair
+    ? completeImplicitPair(state, ownerIndent, scalar)
+    : scalar;
+};
+
+const parseFlowValue = (state: ParserState, ownerIndent: number): unknown => {
+  skipFlowSeparation(state, ownerIndent);
+
+  return parseFlowNode(state, ownerIndent, true);
+};
+
+const skipExplicitKeyIndicator = (
+  state: ParserState,
+  ownerIndent: number
+): void => {
+  if (state.src.charCodeAt(state.pos) !== CHAR_QUESTION) return;
+
+  if (!isBlank(state.src.charCodeAt(state.pos + 1))) return;
+
+  state.pos++;
+  skipFlowSeparation(state, ownerIndent);
+};
+
+const parseFlowMapValue = (
+  state: ParserState,
+  ownerIndent: number
+): unknown => {
+  if (state.src.charCodeAt(state.pos) !== CHAR_COLON) return null;
+
+  state.pos++;
+  skipFlowSeparation(state, ownerIndent);
+
+  const code = state.src.charCodeAt(state.pos);
+
+  if (state.pos >= state.len || code === CHAR_COMMA || code === CHAR_RBRACE)
+    return null;
+
+  const valueAnchor = readAnchorOrTag(state);
+
+  return withAnchor(state, valueAnchor, parseFlowValue(state, ownerIndent));
+};
+
+export const parseFlowSeq = (
+  state: ParserState,
+  ownerIndent: number
+): unknown[] => {
+  const openedAt = state.pos;
+  const result: unknown[] = [];
+
+  state.pos++;
+
+  while (openFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) {
+    const anchor = readAnchorOrTag(state);
+
+    result.push(withAnchor(state, anchor, parseFlowValue(state, ownerIndent)));
+
+    if (!closeFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) break;
   }
 
-  return resolveScalar(raw);
+  return result;
+};
+
+export const parseFlowMap = (
+  state: ParserState,
+  ownerIndent: number
+): Record<string, unknown> => {
+  const openedAt = state.pos;
+  const result: Record<string, unknown> = {};
+
+  state.pos++;
+
+  while (openFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) {
+    skipExplicitKeyIndicator(state, ownerIndent);
+
+    const keyAnchor = readAnchorOrTag(state);
+    const key = withAnchor(
+      state,
+      keyAnchor,
+      parseFlowNode(state, ownerIndent, false)
+    );
+
+    skipFlowSeparation(state, ownerIndent);
+    setMapKey(result, String(key), parseFlowMapValue(state, ownerIndent));
+
+    if (!closeFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) break;
+  }
+
+  return result;
 };

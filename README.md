@@ -54,7 +54,7 @@ const { parse } = require('yaml.min');
 
 ### Quickstart
 
-```ts
+```js
 import { parse } from 'yaml.min';
 
 const data = parse(`
@@ -141,6 +141,8 @@ negative_inf: -.inf
 not_a_number: .nan
 ```
 
+A number too large for JavaScript, such as `1e999`, stays a string instead of becoming `Infinity`.
+
 ### Booleans
 
 ```yaml
@@ -215,19 +217,24 @@ complex key: value
 
 ### Document Markers
 
-```yaml
----
+`parse` reads a single document and rejects a stream that holds more than one. Use `parseAll` to read every document in order:
+
+```ts
+import { parseAll } from 'yaml.min';
+
+parseAll(`---
 first: document
 ...
 ---
 second: document
+`); // [{ first: 'document' }, { second: 'document' }]
 ```
 
 ---
 
 ## TypeScript
 
-The `parse` function accepts a generic type parameter:
+`parse` returns `unknown` and `parseAll` returns `unknown[]`, since a document can hold any shape. Check the shape before using it:
 
 ```ts
 import { parse } from 'yaml.min';
@@ -239,11 +246,22 @@ type Config = {
   };
 };
 
-const config = parse<Config>(`
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isConfig = (value: unknown): value is Config =>
+  isRecord(value) &&
+  isRecord(value.database) &&
+  typeof value.database.host === 'string' &&
+  typeof value.database.port === 'number';
+
+const config = parse(`
   database:
     host: localhost
     port: 5432
 `);
+
+if (!isConfig(config)) throw new TypeError('Invalid configuration');
 
 config.database.host; // string
 config.database.port; // number

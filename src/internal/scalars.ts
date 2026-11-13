@@ -1,9 +1,7 @@
 import {
   CHAR_0,
   CHAR_9,
-  CHAR_CR,
   CHAR_DOT,
-  CHAR_LF,
   CHAR_LOWER_F,
   CHAR_LOWER_N,
   CHAR_LOWER_O,
@@ -11,60 +9,63 @@ import {
   CHAR_LOWER_X,
   CHAR_MINUS,
   CHAR_PLUS,
-  CHAR_SPACE,
-  CHAR_TAB,
   CHAR_TILDE,
-  CHAR_UNDERSCORE,
   CHAR_UPPER_F,
   CHAR_UPPER_N,
   CHAR_UPPER_T,
-  isDecimal,
-  isHexChar,
-  isOctalChar,
+  hexDigitValue,
   RE_FLOAT,
   RE_INFINITY,
 } from './chars.js';
 
-export const resolveInteger = (raw: string): number | undefined => {
-  const length = raw.length;
-  let index = 0;
-  let code = raw.charCodeAt(index);
+const RADIX_PREFIX_LENGTH = 2;
 
-  if (code === CHAR_MINUS || code === CHAR_PLUS) {
-    code = raw.charCodeAt(++index);
+const isDigitRun = (raw: string, start: number, radix: number): boolean => {
+  if (start >= raw.length) return false;
+
+  for (let index = start; index < raw.length; index++) {
+    const digit = hexDigitValue(raw.charCodeAt(index));
+
+    if (digit === -1 || digit >= radix) return false;
   }
 
-  if (code === CHAR_0 && index + 1 < length) {
-    const prefix = raw.charCodeAt(index + 1);
+  return true;
+};
 
-    if (prefix === CHAR_LOWER_O) {
-      for (let charIndex = index + 2; charIndex < length; charIndex++) {
-        if (!isOctalChar(raw.charCodeAt(charIndex))) return undefined;
-      }
+const resolvePrefixedInteger = (
+  raw: string,
+  radix: number
+): number | undefined =>
+  isDigitRun(raw, RADIX_PREFIX_LENGTH, radix)
+    ? Number.parseInt(raw.slice(RADIX_PREFIX_LENGTH), radix)
+    : undefined;
 
-      return index + 2 < length
-        ? Number.parseInt(raw.slice(index + 2), 8)
-        : undefined;
-    }
+const resolveInteger = (raw: string): number | undefined => {
+  const signLength =
+    raw.charCodeAt(0) === CHAR_MINUS || raw.charCodeAt(0) === CHAR_PLUS ? 1 : 0;
 
-    if (prefix === CHAR_LOWER_X) {
-      for (let charIndex = index + 2; charIndex < length; charIndex++) {
-        if (!isHexChar(raw.charCodeAt(charIndex))) return undefined;
-      }
+  if (raw.charCodeAt(signLength) === CHAR_0) {
+    const prefix = raw.charCodeAt(signLength + 1);
+    const isPrefixed = prefix === CHAR_LOWER_O || prefix === CHAR_LOWER_X;
 
-      return index + 2 < length
-        ? Number.parseInt(raw.slice(index + 2), 16)
-        : undefined;
-    }
+    if (isPrefixed && signLength > 0) return undefined;
+
+    if (prefix === CHAR_LOWER_O) return resolvePrefixedInteger(raw, 8);
+
+    if (prefix === CHAR_LOWER_X) return resolvePrefixedInteger(raw, 16);
   }
 
-  if (index >= length) return undefined;
+  return isDigitRun(raw, signLength, 10) ? Number.parseInt(raw, 10) : undefined;
+};
 
-  for (let charIndex = index; charIndex < length; charIndex++) {
-    if (!isDecimal(raw.charCodeAt(charIndex))) return undefined;
-  }
+const resolveNumeral = (raw: string): number | undefined => {
+  const integer = resolveInteger(raw);
 
-  return Number.parseInt(raw, 10);
+  if (integer !== undefined) return integer;
+
+  if (RE_FLOAT.test(raw)) return Number.parseFloat(raw);
+
+  return undefined;
 };
 
 export const resolveScalar = (raw: string): unknown => {
@@ -98,15 +99,12 @@ export const resolveScalar = (raw: string): unknown => {
     firstCharCode === CHAR_MINUS ||
     firstCharCode === CHAR_DOT
   ) {
-    const integer = resolveInteger(raw);
+    const numeral = resolveNumeral(raw);
 
-    if (integer !== undefined) return integer;
-
-    if (RE_FLOAT.test(raw) && raw !== '+' && raw !== '-')
-      return Number.parseFloat(raw);
+    if (Number.isFinite(numeral)) return numeral;
 
     if (RE_INFINITY.test(raw))
-      return raw[0] === '-'
+      return firstCharCode === CHAR_MINUS
         ? Number.NEGATIVE_INFINITY
         : Number.POSITIVE_INFINITY;
 
@@ -114,46 +112,4 @@ export const resolveScalar = (raw: string): unknown => {
   }
 
   return raw;
-};
-
-export const trimEnd = (str: string): string => {
-  let cursor = str.length;
-
-  while (cursor > 0) {
-    const code = str.charCodeAt(cursor - 1);
-
-    if (
-      code !== CHAR_SPACE &&
-      code !== CHAR_TAB &&
-      code !== CHAR_LF &&
-      code !== CHAR_CR
-    )
-      break;
-
-    cursor--;
-  }
-
-  return cursor < str.length ? str.slice(0, cursor) : str;
-};
-
-export const setMapKey = (
-  target: Record<string, unknown>,
-  key: string,
-  value: unknown
-): void => {
-  if (key.charCodeAt(0) === CHAR_UNDERSCORE && key === '__proto__') {
-    Object.defineProperty(target, key, {
-      value,
-      writable: true,
-      enumerable: true,
-      configurable: true,
-    });
-  } else {
-    target[key] = value;
-  }
-};
-
-export const stringifyKey = (key: unknown): string => {
-  if (typeof key === 'object' && key !== null) return JSON.stringify(key);
-  return String(key == null ? '' : key);
 };

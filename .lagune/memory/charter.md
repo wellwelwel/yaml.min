@@ -26,18 +26,6 @@ Input that is not valid YAML v1.2 MUST fail with an error. Never return a partia
 
 - Why: two parsers that read the same bytes differently is a security bug in everything built on top of them. If yaml.min quietly accepts a document another parser rejects, or reads a different value out of it, an attacker writes one file that the tool checking a policy reads one way and the system enforcing it reads another. Silent recovery also hides truncated and tampered documents, which then parse as though they were complete.
 
-### V. The parser stays pure and dependency-free
-
-Never read a file, open a network connection, read environment variables, spawn a process, or touch global state from inside the parser. Never take on a runtime dependency: any new one MUST be justified in the open and weighed against writing the code here.
-
-- Why: a library that only turns text into data cannot be the vector for anything else, and that limit is the strongest guarantee this project offers. Every capability added takes it away, and every runtime dependency silently inherits whatever that package (and everything under it) is compromised by, straight into every application that installed yaml.min.
-
-### VI. What ships is what was reviewed
-
-The package published to npm MUST be built in CI from the reviewed source, with provenance attached, never from a maintainer's machine. The published files MUST contain only what the library needs to run. Never add an install or postinstall script to the published package.
-
-- Why: this package is a dependency inside other people's applications and build pipelines, so a tampered publish is a compromise of everyone downstream, all at once. Because what ships is a build output rather than the source people read on GitHub, a verifiable link back to the reviewed commit is the only thing that lets anyone confirm the two match.
-
 ## Baseline discipline
 
 Lagune holds this charter, every principle, every time. A principle is not suspended because a control looks small, familiar, or unlikely to be hit. This is not a judgement call.

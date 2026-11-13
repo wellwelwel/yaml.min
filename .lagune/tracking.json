@@ -1,0 +1,67 @@
+{
+  "entries": [
+    {
+      "name": "The nesting depth limit does not cover every recursion path",
+      "paths": [
+        "src/internal/block.ts",
+        "src/internal/flow.ts",
+        "src/types.ts",
+        "src/index.ts",
+        "test/e2e/nested.test.mts"
+      ]
+    },
+    {
+      "name": "Alias expansion has no fan-out, depth, or size budget",
+      "paths": [
+        "src/internal/anchors.ts",
+        "src/internal/block.ts",
+        "src/internal/flow.ts",
+        "src/internal/keys.ts",
+        "src/types.ts",
+        "src/index.ts",
+        "README.md",
+        "test/e2e/aliases.test.mts"
+      ]
+    },
+    {
+      "name": "Prototype-chain gadget keys survive into the parsed result",
+      "paths": [
+        "src/internal/keys.ts",
+        "src/internal/block.ts",
+        "src/internal/flow.ts",
+        "test/e2e/mapping-keys.test.mts"
+      ]
+    },
+    {
+      "name": "Mapping keys are coerced to strings, so distinct keys silently collide",
+      "paths": [
+        "src/internal/keys.ts",
+        "src/internal/block.ts",
+        "src/internal/flow.ts",
+        "test/e2e/block-collections.test.mts",
+        "test/e2e/flow-collections.test.mts"
+      ]
+    },
+    {
+      "name": "Block and flow mappings stringify the same key by different rules",
+      "paths": [
+        "src/internal/keys.ts",
+        "src/internal/block.ts",
+        "src/internal/flow.ts"
+      ]
+    },
+    {
+      "name": "Numeric scalars are coerced with no precision or range check",
+      "paths": ["src/internal/scalars.ts"]
+    },
+    {
+      "name": "Explicit type tags are discarded, so values keep the type the parser guesses",
+      "paths": [
+        "src/internal/anchors.ts",
+        "src/internal/scalars.ts",
+        "src/internal/block.ts",
+        "src/internal/flow.ts"
+      ]
+    }
+  ]
+}

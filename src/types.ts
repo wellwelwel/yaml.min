@@ -3,6 +3,17 @@ export type ParserState = {
   len: number;
   pos: number;
   depth: number;
-  lastAnchor: string | undefined;
   anchors: Map<string, unknown>;
+};
+
+export type FlowCollection = {
+  name: string;
+  open: string;
+  closeCode: number;
+  foreignCloseCode: number;
+};
+
+export type BlockScalarHeader = {
+  chomp: '' | '-' | '+';
+  explicitIndent: number;
 };

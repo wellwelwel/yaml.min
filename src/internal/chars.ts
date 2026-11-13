@@ -29,6 +29,7 @@ export const CHAR_LBRACKET = 0x5b;
 export const CHAR_BACKSLASH = 0x5c;
 export const CHAR_RBRACKET = 0x5d;
 export const CHAR_UNDERSCORE = 0x5f;
+export const CHAR_LOWER_A = 0x61;
 export const CHAR_LOWER_F = 0x66;
 export const CHAR_LOWER_N = 0x6e;
 export const CHAR_LOWER_O = 0x6f;
@@ -40,34 +41,41 @@ export const CHAR_PIPE = 0x7c;
 export const CHAR_RBRACE = 0x7d;
 export const CHAR_TILDE = 0x7e;
 
+export const MAX_CODE_POINT = 0x10ffff;
+
+export const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+
 // Based on js-yaml
-export const NON_PRINTABLE =
-  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+export const NON_PRINTABLE = new RegExp(
+  `[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x84\\x86-\\x9F\\uFFFE\\uFFFF]|${LONE_SURROGATE.source}`
+);
 
 export const SIMPLE_ESCAPE_MAP: (string | undefined)[] = (() => {
   const map: (string | undefined)[] = new Array(128);
-  const escapes: Record<number, string> = {
-    48 /* 0 */: '\x00',
-    97 /* a */: '\x07',
-    98 /* b */: '\b',
-    101 /* e */: '\x1b',
-    102 /* f */: '\f',
-    110 /* n */: '\n',
-    114 /* r */: '\r',
-    116 /* t */: '\t',
-    118 /* v */: '\v',
-    78 /* N */: '\u0085',
-    95 /* _ */: '\u00a0',
-    76 /* L */: '\u2028',
-    80 /* P */: '\u2029',
-    32 /* (space) */: ' ',
-    34 /* " */: '"',
-    47 /* / */: '/',
-    92 /* \ */: '\\',
+  const escapes: Record<string, string> = {
+    '0': '\x00',
+    a: '\x07',
+    b: '\b',
+    t: '\t',
+    '\t': '\t',
+    n: '\n',
+    v: '\v',
+    f: '\f',
+    r: '\r',
+    e: '\x1b',
+    ' ': ' ',
+    '"': '"',
+    '/': '/',
+    '\\': '\\',
+    N: '\u0085',
+    _: '\u00a0',
+    L: '\u2028',
+    P: '\u2029',
   };
 
-  for (const code of Object.keys(escapes))
-    map[Number(code)] = escapes[Number(code)];
+  for (const [escaped, decoded] of Object.entries(escapes))
+    map[escaped.charCodeAt(0)] = decoded;
 
   return map;
 })();
@@ -76,13 +84,21 @@ export const RE_FLOAT = /^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/;
 
 export const RE_INFINITY = /^[+-]?\.(inf|Inf|INF)$/;
 
-export const isDecimal = (code: number): boolean =>
-  code >= CHAR_0 && code <= CHAR_9;
+export const isSpaceOrTab = (code: number): boolean =>
+  code === CHAR_SPACE || code === CHAR_TAB;
 
-export const isHexChar = (code: number): boolean =>
-  (code >= CHAR_0 && code <= CHAR_9) ||
-  (code >= CHAR_UPPER_A && code <= CHAR_UPPER_F) ||
-  (code >= 0x61 && code <= CHAR_LOWER_F);
+export const isLineBreak = (code: number): boolean =>
+  code === CHAR_LF || code === CHAR_CR;
 
-export const isOctalChar = (code: number): boolean =>
-  code >= CHAR_0 && code <= 0x37;
+export const isBlank = (code: number): boolean =>
+  isSpaceOrTab(code) || isLineBreak(code);
+
+export const hexDigitValue = (code: number): number => {
+  if (code >= CHAR_0 && code <= CHAR_9) return code - CHAR_0;
+  if (code >= CHAR_UPPER_A && code <= CHAR_UPPER_F)
+    return code - CHAR_UPPER_A + 10;
+  if (code >= CHAR_LOWER_A && code <= CHAR_LOWER_F)
+    return code - CHAR_LOWER_A + 10;
+
+  return -1;
+};

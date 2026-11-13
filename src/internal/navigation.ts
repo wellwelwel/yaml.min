@@ -1,28 +1,70 @@
 import type { ParserState } from '../types.js';
 import {
-  CHAR_AMP,
-  CHAR_COLON,
-  CHAR_COMMA,
   CHAR_CR,
   CHAR_DOT,
-  CHAR_EXCL,
   CHAR_HASH,
   CHAR_LF,
   CHAR_MINUS,
-  CHAR_PERCENT,
-  CHAR_RBRACE,
-  CHAR_RBRACKET,
   CHAR_SPACE,
   CHAR_TAB,
+  isBlank,
+  isLineBreak,
+  isSpaceOrTab,
 } from './chars.js';
 
-export const skipSpaces = (state: ParserState): void => {
-  while (state.pos < state.len) {
-    const code = state.src.charCodeAt(state.pos);
+export const isBlankOrEnd = (state: ParserState, position: number): boolean =>
+  position >= state.len || isBlank(state.src.charCodeAt(position));
 
-    if (code !== CHAR_SPACE && code !== CHAR_TAB) break;
-    state.pos++;
-  }
+export const isAtLineBreakOrEnd = (state: ParserState): boolean =>
+  state.pos >= state.len || isLineBreak(state.src.charCodeAt(state.pos));
+
+export const lineBreakWidth = (state: ParserState, position: number): number =>
+  state.src.charCodeAt(position) === CHAR_CR &&
+  state.src.charCodeAt(position + 1) === CHAR_LF
+    ? 2
+    : 1;
+
+export const countIndentSpaces = (
+  state: ParserState,
+  lineStart: number
+): number => {
+  let cursor = lineStart;
+
+  while (state.src.charCodeAt(cursor) === CHAR_SPACE) cursor++;
+
+  return cursor - lineStart;
+};
+
+export const isLineStart = (state: ParserState, position: number): boolean =>
+  position === 0 || isLineBreak(state.src.charCodeAt(position - 1));
+
+const isMarkerOf = (
+  state: ParserState,
+  position: number,
+  markerCode: number
+): boolean =>
+  state.src.charCodeAt(position) === markerCode &&
+  state.src.charCodeAt(position + 1) === markerCode &&
+  state.src.charCodeAt(position + 2) === markerCode &&
+  isBlankOrEnd(state, position + 3) &&
+  isLineStart(state, position);
+
+export const isDocumentStart = (
+  state: ParserState,
+  position: number
+): boolean => isMarkerOf(state, position, CHAR_MINUS);
+
+export const isDocumentEnd = (state: ParserState, position: number): boolean =>
+  isMarkerOf(state, position, CHAR_DOT);
+
+export const isDocumentMarker = (
+  state: ParserState,
+  position: number
+): boolean =>
+  isDocumentStart(state, position) || isDocumentEnd(state, position);
+
+export const skipSpaces = (state: ParserState): void => {
+  while (isSpaceOrTab(state.src.charCodeAt(state.pos))) state.pos++;
 };
 
 export const skipComment = (state: ParserState): void => {
@@ -36,242 +78,62 @@ export const skipBlanksAndComments = (state: ParserState): void => {
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
 
-    if (
-      code === CHAR_SPACE ||
-      code === CHAR_TAB ||
-      code === CHAR_CR ||
-      code === CHAR_LF
-    ) {
-      state.pos++;
-    } else if (code === CHAR_HASH) {
-      while (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) !== CHAR_LF
-      )
-        state.pos++;
-    } else {
-      break;
+    if (code === CHAR_HASH) {
+      skipComment(state);
+      continue;
     }
+
+    if (!isBlank(code)) return;
+
+    state.pos++;
   }
+};
+
+const skipTabbedBlankLine = (state: ParserState): boolean => {
+  let cursor = state.pos;
+
+  while (isSpaceOrTab(state.src.charCodeAt(cursor))) cursor++;
+
+  if (cursor < state.len) {
+    const code = state.src.charCodeAt(cursor);
+
+    if (code !== CHAR_HASH && !isLineBreak(code)) return false;
+  }
+
+  state.pos = cursor;
+  skipComment(state);
+
+  return true;
 };
 
 export const skipNewlinesAndComments = (state: ParserState): number => {
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
 
-    if (code === CHAR_LF) {
+    if (isLineBreak(code)) {
       state.pos++;
-    } else if (code === CHAR_CR) {
-      state.pos++;
-
-      if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_LF)
-        state.pos++;
-    } else {
-      const lineStart = state.pos;
-
-      while (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) === CHAR_SPACE
-      )
-        state.pos++;
-
-      if (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) === CHAR_HASH
-      ) {
-        while (
-          state.pos < state.len &&
-          state.src.charCodeAt(state.pos) !== CHAR_LF
-        )
-          state.pos++;
-      } else {
-        return state.pos - lineStart;
-      }
+      continue;
     }
+
+    const lineStart = state.pos;
+
+    state.pos += countIndentSpaces(state, lineStart);
+
+    if (state.pos >= state.len) return 0;
+
+    const contentCode = state.src.charCodeAt(state.pos);
+
+    if (isLineBreak(contentCode)) continue;
+
+    if (contentCode === CHAR_HASH) {
+      skipComment(state);
+      continue;
+    }
+
+    if (contentCode === CHAR_TAB && skipTabbedBlankLine(state)) continue;
+
+    return state.pos - lineStart;
   }
 
   return 0;
-};
-
-export const peekLineIndent = (state: ParserState): number => {
-  let cursor = state.pos;
-
-  while (cursor < state.len) {
-    if (state.src.charCodeAt(cursor) !== CHAR_SPACE) break;
-    cursor++;
-  }
-
-  return cursor - state.pos;
-};
-
-export const skipDirectivesAndMarkers = (state: ParserState): void => {
-  while (state.pos < state.len) {
-    skipBlanksAndComments(state);
-
-    if (state.pos >= state.len) break;
-
-    if (state.src.charCodeAt(state.pos) === CHAR_PERCENT) {
-      while (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) !== CHAR_LF
-      )
-        state.pos++;
-
-      continue;
-    }
-
-    if (
-      state.src.charCodeAt(state.pos) === CHAR_MINUS &&
-      state.src.charCodeAt(state.pos + 1) === CHAR_MINUS &&
-      state.src.charCodeAt(state.pos + 2) === CHAR_MINUS
-    ) {
-      state.pos += 3;
-
-      if (state.pos < state.len) {
-        const afterMarker = state.src.charCodeAt(state.pos);
-
-        if (
-          afterMarker !== CHAR_SPACE &&
-          afterMarker !== CHAR_LF &&
-          afterMarker !== CHAR_CR &&
-          afterMarker !== CHAR_TAB
-        ) {
-          state.pos -= 3;
-          break;
-        }
-      }
-
-      skipSpaces(state);
-      skipComment(state);
-
-      if (state.pos < state.len) {
-        const newlineCode = state.src.charCodeAt(state.pos);
-
-        if (newlineCode === CHAR_CR) {
-          state.pos++;
-
-          if (
-            state.pos < state.len &&
-            state.src.charCodeAt(state.pos) === CHAR_LF
-          )
-            state.pos++;
-        } else if (newlineCode === CHAR_LF) {
-          state.pos++;
-        }
-      }
-
-      continue;
-    }
-
-    if (
-      state.src.charCodeAt(state.pos) === CHAR_DOT &&
-      state.src.charCodeAt(state.pos + 1) === CHAR_DOT &&
-      state.src.charCodeAt(state.pos + 2) === CHAR_DOT
-    ) {
-      state.pos += 3;
-
-      while (
-        state.pos < state.len &&
-        state.src.charCodeAt(state.pos) !== CHAR_LF
-      )
-        state.pos++;
-
-      if (state.pos < state.len) state.pos++;
-      continue;
-    }
-
-    break;
-  }
-};
-
-export const readAnchorOrTag = (state: ParserState): void => {
-  state.lastAnchor = undefined;
-
-  while (state.pos < state.len) {
-    skipSpaces(state);
-
-    const code = state.src.charCodeAt(state.pos);
-
-    if (code !== CHAR_AMP && code !== CHAR_EXCL) break;
-
-    if (code === CHAR_AMP) {
-      state.pos++;
-
-      const start = state.pos;
-
-      while (state.pos < state.len) {
-        const charCode = state.src.charCodeAt(state.pos);
-
-        if (
-          charCode === CHAR_SPACE ||
-          charCode === CHAR_TAB ||
-          charCode === CHAR_LF ||
-          charCode === CHAR_CR ||
-          charCode === CHAR_COMMA ||
-          charCode === CHAR_RBRACKET ||
-          charCode === CHAR_RBRACE ||
-          charCode === CHAR_COLON
-        )
-          break;
-
-        state.pos++;
-      }
-
-      state.lastAnchor = state.src.slice(start, state.pos);
-      continue;
-    }
-
-    // CHAR_EXCL (skip tag)
-    while (state.pos < state.len) {
-      const charCode = state.src.charCodeAt(state.pos);
-
-      if (
-        charCode === CHAR_SPACE ||
-        charCode === CHAR_TAB ||
-        charCode === CHAR_LF ||
-        charCode === CHAR_CR
-      )
-        break;
-
-      state.pos++;
-    }
-  }
-};
-
-export const parseAlias = (state: ParserState): unknown => {
-  state.pos++;
-
-  const start = state.pos;
-
-  while (state.pos < state.len) {
-    const charCode = state.src.charCodeAt(state.pos);
-
-    if (
-      charCode === CHAR_SPACE ||
-      charCode === CHAR_TAB ||
-      charCode === CHAR_LF ||
-      charCode === CHAR_CR ||
-      charCode === CHAR_COMMA ||
-      charCode === CHAR_RBRACKET ||
-      charCode === CHAR_RBRACE ||
-      charCode === CHAR_COLON
-    )
-      break;
-
-    state.pos++;
-  }
-
-  const name = state.src.slice(start, state.pos);
-
-  if (state.anchors.has(name)) return state.anchors.get(name);
-  return undefined;
-};
-
-export const withAnchor = (
-  state: ParserState,
-  anchor: string | undefined,
-  value: unknown
-): unknown => {
-  if (anchor) state.anchors.set(anchor, value);
-  return value;
 };
