@@ -1,0 +1,78 @@
+# yaml.min Security Charter
+
+## Principles
+
+### I. Parsing never becomes execution
+
+Never let a document decide what code runs. `parse` MUST only ever produce inert data: plain objects, arrays, strings, numbers, booleans, and null. Never call `eval`, `new Function`, `require`, or a dynamic import on anything derived from the input, and never resolve a YAML tag, type, or directive into a constructed instance, a function, or any value that carries behaviour.
+
+- Why: this is the failure that has broken YAML parsers before. The moment a document can name a type and get an object back, whoever wrote the document controls the program that read it. A config file, a CI manifest, or a user upload turns into remote code execution on the machine that parsed it.
+
+### II. Parsed data never reaches the prototype chain
+
+Keys from a document MUST always land as ordinary data on the object being built. Never let a key such as `__proto__`, `constructor`, or `prototype` modify a shared prototype, and never assume a key is safe because it looks ordinary. Every place that assigns a key onto a result object MUST go through the same guarded assignment, in block mappings, in flow mappings, and in implicit pairs alike.
+
+- Why: prototype pollution lets a document change how every other object in the host application behaves, far outside the data it was supposed to describe. A single crafted key in a config file can flip an internal flag, bypass a permission check, or hand an attacker code execution in the application that trusted the file.
+
+### III. Hostile input never exhausts the host
+
+A document MUST never be able to hang or crash the process that parses it. Always bound recursion depth on every path that can nest, in block collections, in flow collections, and in inline values, not just on one of them. Always keep time and memory proportional to the length of the input: patterns applied to untrusted text MUST run in linear time, string building MUST not become quadratic, and an alias MUST never expand into a copy of what it points at.
+
+- Why: a parser is handed the whole document before anyone has checked it. A few hundred bytes of nested brackets can overflow the stack, and a handful of nested aliases can multiply into gigabytes. Whatever embeds this library goes down with it, so a crash here is a denial of service in someone else's server, build, or deploy.
+
+### IV. Malformed input is rejected, never guessed
+
+Input that is not valid YAML v1.2 MUST fail with an error. Never return a partial, truncated, or invented value for a document that does not parse: an unterminated quote, an alias with no anchor, or a structure that ends mid-way is an error, not a best-effort result.
+
+- Why: two parsers that read the same bytes differently is a security bug in everything built on top of them. If yaml.min quietly accepts a document another parser rejects, or reads a different value out of it, an attacker writes one file that the tool checking a policy reads one way and the system enforcing it reads another. Silent recovery also hides truncated and tampered documents, which then parse as though they were complete.
+
+### V. The parser stays pure and dependency-free
+
+Never read a file, open a network connection, read environment variables, spawn a process, or touch global state from inside the parser. Never take on a runtime dependency: any new one MUST be justified in the open and weighed against writing the code here.
+
+- Why: a library that only turns text into data cannot be the vector for anything else, and that limit is the strongest guarantee this project offers. Every capability added takes it away, and every runtime dependency silently inherits whatever that package (and everything under it) is compromised by, straight into every application that installed yaml.min.
+
+### VI. What ships is what was reviewed
+
+The package published to npm MUST be built in CI from the reviewed source, with provenance attached, never from a maintainer's machine. The published files MUST contain only what the library needs to run. Never add an install or postinstall script to the published package.
+
+- Why: this package is a dependency inside other people's applications and build pipelines, so a tampered publish is a compromise of everyone downstream, all at once. Because what ships is a build output rather than the source people read on GitHub, a verifiable link back to the reviewed commit is the only thing that lets anyone confirm the two match.
+
+## Baseline discipline
+
+Lagune holds this charter, every principle, every time. A principle is not suspended because a control looks small, familiar, or unlikely to be hit. This is not a judgement call.
+
+### Only the controls the project needs
+
+Lagune recommends and applies only the controls this project's context calls for. A control the project does not need is never added for completeness, and a generic checklist is not thoroughness. Every later phase acts on what the system actually does, never on what it might hypothetically do.
+
+- Why: effort spent on risks the project does not have buries the risks it does have. Fewer, right-sized controls are easier to apply, prove, and keep true than a checklist no one finishes.
+
+### Prefer the simplest vetted control
+
+When a control is needed, reach for the safest option already proven, in order: a control this project already has, then a platform or framework built-in, then a well-maintained vetted library, and only then custom code. Never hand-roll a security primitive (cryptography, escaping, authentication, sessions) that a vetted standard already provides. A new dependency is new attack surface, justified and not assumed. Code, an endpoint, or a feature the project does not use is attack surface too, so removing it is itself a control.
+
+- Why: hand-rolled security is where subtle, unaudited bugs live, and a second control duplicating an existing one is the one that gets forgotten and drifts. Boring, standard controls are easier to audit and harder to get wrong, and less surface is less to defend.
+
+### When a control seems skippable
+
+A control is held even when a reason to skip it feels reasonable:
+
+- "Too small to need a control": small gaps are where breaches start.
+- "Already handled elsewhere": assumed coverage is exactly how gaps hide.
+- "Unlikely to be hit": attackers target the path no one is watching.
+- "It works, ship it": working and safe are different claims, and the charter requires both.
+
+## Governance
+
+This charter supersedes ad hoc decisions. When a choice in the code conflicts with a principle here, the principle wins and the code changes.
+
+Speed is never a reason to drop a control. yaml.min exists to be the fast parser, so the pressure to trade a bound or a check for a benchmark number is constant and expected. That trade is not available. When a control genuinely costs too much, the answer is a cheaper control that holds the same line, never no control.
+
+Every principle applies to the whole parser, not only to the entry point. A guard that exists on one path and not its siblings does not satisfy the principle it belongs to.
+
+Later phases (detect, plan, harden, verify) work from this charter and tie what they find back to the principle it belongs to. A finding with no principle behind it means the charter is incomplete, so amend it here rather than working around it.
+
+Amend this charter by rerunning `/lagune.charter`, which reconciles it against the project as it is now: principles that still hold are kept, principles that changed are rewritten, and principles that no longer apply are removed rather than kept for history. Every amendment updates the version below: MAJOR when a principle is removed or redefined, MINOR when one is added or materially widened, PATCH for wording.
+
+Version: 1.0.0 | Ratified: 2026-08-04

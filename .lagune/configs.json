@@ -1,0 +1,16 @@
+{
+  "$schema": "https://lagune.ai/schemas/configs.json",
+  "categories": ["owasp", "javascript"],
+  "checkers": {
+    "ignore": [
+      ".agents",
+      ".claude",
+      ".github",
+      "benchmark",
+      ".vscode",
+      ".lagune",
+      "test",
+      "poku.config.js"
+    ]
+  }
+}
