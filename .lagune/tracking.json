@@ -1,24 +1,6 @@
 {
   "entries": [
     {
-      "name": "Mapping keys are coerced to strings, so distinct keys silently collide",
-      "paths": [
-        "src/internal/keys.ts",
-        "src/internal/block.ts",
-        "src/internal/flow.ts",
-        "test/e2e/block-collections.test.mts",
-        "test/e2e/flow-collections.test.mts"
-      ]
-    },
-    {
-      "name": "Block and flow mappings stringify the same key by different rules",
-      "paths": [
-        "src/internal/keys.ts",
-        "src/internal/block.ts",
-        "src/internal/flow.ts"
-      ]
-    },
-    {
       "name": "Numeric scalars are coerced with no precision or range check",
       "paths": [
         "src/internal/scalars.ts"

@@ -102,6 +102,11 @@ const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
   }
 };
 
+const skipFlowIndicator = (state: ParserState, ownerIndent: number): void => {
+  state.pos++;
+  skipFlowSeparation(state, ownerIndent);
+};
+
 const isFlowTerminator = (state: ParserState): boolean => {
   if (state.pos >= state.len) return true;
 
@@ -135,17 +140,26 @@ const unexpectedError = (
     `Unexpected "${state.src.charAt(state.pos)}" in a ${collection.name}: expected ${expected}`
   );
 
+const skipToFlowBoundary = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): number => {
+  skipFlowSeparation(state, ownerIndent);
+
+  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
+
+  return state.src.charCodeAt(state.pos);
+};
+
 const openFlowEntry = (
   state: ParserState,
   collection: FlowCollection,
   openedAt: number,
   ownerIndent: number
 ): boolean => {
-  skipFlowSeparation(state, ownerIndent);
-
-  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
-
-  const code = state.src.charCodeAt(state.pos);
+  const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
   if (code === collection.closeCode) {
     state.pos++;
@@ -168,11 +182,7 @@ const closeFlowEntry = (
   openedAt: number,
   ownerIndent: number
 ): boolean => {
-  skipFlowSeparation(state, ownerIndent);
-
-  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
-
-  const code = state.src.charCodeAt(state.pos);
+  const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
   if (code !== CHAR_COMMA && code !== collection.closeCode)
     throw unexpectedError(
@@ -213,15 +223,8 @@ const completeImplicitPair = (
 
   const pair: Record<string, unknown> = {};
 
-  state.pos++;
-  skipFlowSeparation(state, ownerIndent);
-  setMapKey(
-    state,
-    pair,
-    String(key),
-    keyStart,
-    parseFlowValue(state, ownerIndent)
-  );
+  skipFlowIndicator(state, ownerIndent);
+  setMapKey(state, pair, key, keyStart, parseFlowValue(state, ownerIndent));
   leaveCollection(state);
 
   return pair;
@@ -262,8 +265,7 @@ const skipExplicitKeyIndicator = (
   if (state.src.charCodeAt(state.pos) !== CHAR_QUESTION) return;
   if (!isBlank(state.src.charCodeAt(state.pos + 1))) return;
 
-  state.pos++;
-  skipFlowSeparation(state, ownerIndent);
+  skipFlowIndicator(state, ownerIndent);
 };
 
 const parseFlowMapValue = (
@@ -272,8 +274,7 @@ const parseFlowMapValue = (
 ): unknown => {
   if (state.src.charCodeAt(state.pos) !== CHAR_COLON) return null;
 
-  state.pos++;
-  skipFlowSeparation(state, ownerIndent);
+  skipFlowIndicator(state, ownerIndent);
 
   if (state.pos >= state.len) return null;
 
@@ -336,7 +337,7 @@ export const parseFlowMap = (
     setMapKey(
       state,
       result,
-      String(key),
+      key,
       keyStart,
       parseFlowMapValue(state, ownerIndent)
     );

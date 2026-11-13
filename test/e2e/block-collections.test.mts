@@ -31,7 +31,7 @@ describe('Block sequences', () => {
       'two',
     ]));
 
-  it('single item seq at EOF', () =>
+  it('single item sequence at the end of input', () =>
     assertParsesTo(read('block-collections--seq-single-item-eof.yaml'), [
       'only',
     ]));
@@ -78,7 +78,7 @@ describe('Quoted keys', () => {
       key: 'val',
     }));
 
-  it('quoted key with colon at EOF', () =>
+  it('quoted key with colon at the end of input', () =>
     assertParsesTo(read('block-collections--quoted-key-colon-eof.yaml'), {
       k: null,
     }));
@@ -153,7 +153,7 @@ describe('Empty values', () => {
       b: 2,
     }));
 
-  it('empty seq item', () =>
+  it('empty sequence item', () =>
     assertParsesTo(read('block-collections--empty-seq-item.yaml'), [null, 2]));
 
   it('value after key with only comments remaining', () =>
@@ -167,10 +167,10 @@ describe('Empty values', () => {
       b: null,
     }));
 
-  it('seq dash at EOF without value', () =>
+  it('sequence dash at the end of input without value', () =>
     assertParsesTo(read('block-collections--seq-dash-eof.yaml'), [null]));
 
-  it('inline seq dash at very end', () =>
+  it('inline sequence dash at very end', () =>
     assertParsesTo(read('block-collections--inline-seq-dash-eof.yaml'), [
       [null],
     ]));
@@ -187,7 +187,7 @@ describe('Compact values after a sequence entry', () => {
       'hello',
     ]));
 
-  it('flow seq inline', () =>
+  it('flow sequence inline', () =>
     assertParsesTo(read('block-collections--seq-flow-seq-inline.yaml'), [
       [1, 2],
     ]));
@@ -197,17 +197,17 @@ describe('Compact values after a sequence entry', () => {
       { a: 1 },
     ]));
 
-  it('nested seq item with value on next line', () =>
+  it('nested sequence item with value on next line', () =>
     assertParsesTo(read('block-collections--inline-nested-seq.yaml'), [
       ['a', 'b'],
     ]));
 
-  it('inline seq items with next-line values', () =>
+  it('inline sequence items with next-line values', () =>
     assertParsesTo(read('block-collections--inline-seq-anchor.yaml'), [
       [1, 1],
     ]));
 
-  it('inline seq dash then newline with indented value', () =>
+  it('inline sequence dash then newline with indented value', () =>
     assertParsesTo(read('block-collections--inline-seq-dash-newline.yaml'), [
       ['val'],
     ]));
@@ -223,17 +223,17 @@ describe('Compact values after a sequence entry', () => {
       [[null], 'b']
     ));
 
-  it('inline seq with two items same line', () =>
+  it('inline sequence with two items same line', () =>
     assertParsesTo(read('block-collections--inline-seq-two-items.yaml'), [
       ['a', 'b'],
     ]));
 
-  it('inline seq item at EOF', () =>
+  it('inline sequence item at the end of input', () =>
     assertParsesTo(read('block-collections--inline-seq-item-eof.yaml'), [
       ['end'],
     ]));
 
-  it('seq dash-newline then map at deeper indent', () =>
+  it('sequence dash-newline then map at deeper indent', () =>
     assertParsesTo(read('block-collections--seq-dash-newline-map.yaml'), [
       { a: 1 },
       { b: 2 },

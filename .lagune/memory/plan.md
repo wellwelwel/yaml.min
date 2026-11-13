@@ -5,22 +5,6 @@
 
 ## Fixes
 
-### Mapping keys are coerced to strings, so distinct keys silently collide
-
-- **Category:** Duplicate key collision through unsafe input equivalence (CWE-1289)
-- **CVSS:** CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:L/SA:N (8.7, High)
-- **Priority:** High
-- **Why this priority:** The reach is the same as any other document this parser is handed, and the material it is aimed at, policy and configuration files, is exactly where it hurts. What holds it below Critical is where the damage stops: the attacker gets full control over which entry the consumer ends up seeing, so the parser's own integrity guarantee is completely gone, but the consequence stays inside the one document that was parsed instead of spreading through the host process the way a polluted prototype does. Charter principle IV treats the resulting disagreement between readers as a real risk, and a published parser's wide blast radius keeps the integrity requirement High, so it settles at the top of High rather than dropping to Medium.
-- **Upholds:** IV. Malformed input is rejected, never guessed
-- **Depends on:** Block and flow mappings stringify the same key by different rules
-- **Fix:** Reject a repeated key. Inside the shared key-assignment helper, once a key has its final property name, test own-property presence on the object being built (`Object.hasOwn`, never `in`, so an inherited name such as `toString` is never mistaken for a taken key) and fail with the parser's `SyntaxError` when the name is already there. Every call site on both mapping paths goes through that helper, so the check covers them all. This is **js-yaml**'s rule: it compares final property names through `hasOwnProperty` and throws `duplicated mapping key` (`nodeca-js-yaml/src/tag/mapping/map.ts:51-55`, `nodeca-js-yaml/src/parser/constructor.ts:305-307`).
-
-  Compare property names, not the typed values the keys resolved to. **yaml** compares resolved values, so `"16"` and `16` count as different keys, land on the same property, and the later one still wins silently (`eemeli-yaml/src/compose/resolve-block-map.ts:79-80`, `eemeli-yaml/src/compose/resolve-flow-collection.ts:196-201`). Comparing names turns every collision detect listed into an error: a plain repeated key, `0x10` and `16`, `1.0` and `"1"`, and `null`, `~` and the empty key. No canonical naming scheme is needed, because a plain object can only hold the name, and a document that maps two keys onto one name is refused instead of resolved by guessing which one the author meant. Collection keys, the source of the `[object Object]` collapse, are refused by the stringification fix, which is why this fix follows it.
-
-  Add, in both syntaxes, a plain repeated key, each collision pair above, a repeat that arrives through an alias, a repeat through the explicit-key form, and a single `toString` key that must still parse. Neither the snapshot corpus nor the end-to-end suites feed a repeated key today.
-
-- **References:** [CWE-1289: Improper Validation of Unsafe Equivalence in Input](https://cwe.mitre.org/data/definitions/1289.html), [CWE-694: Use of Multiple Resources with Duplicate Identifier](https://cwe.mitre.org/data/definitions/694.html)
-
 ### Numeric scalars are coerced with no precision or range check
 
 - **Category:** Numeric truncation and precision loss (CWE-681)
@@ -38,21 +22,6 @@
   Pin each rule at its edge: `9007199254740991` returns a number and `9007199254740992` returns text, `0x1FFFFFFFFFFFFF` and `0x20000000000000` likewise, `1e308` returns a number and `1e309` returns text, every literal spelling returns its value, and `01234` returns 1234.
 
 - **References:** [CWE-681: Incorrect Conversion between Numeric Types](https://cwe.mitre.org/data/definitions/681.html), [CWE-197: Numeric Truncation Error](https://cwe.mitre.org/data/definitions/197.html), [CWE-1339: Insufficient Precision or Accuracy of a Real Number](https://cwe.mitre.org/data/definitions/1339.html)
-
-### Block and flow mappings stringify the same key by different rules
-
-- **Category:** Interpretation conflict, parser differential (CWE-436)
-- **CVSS:** CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:N/VC:N/VI:L/VA:N/SC:N/SI:L/SA:N (6.3, Medium)
-- **Priority:** Medium
-- **Why this priority:** The document reaches it as easily as any other, but the divergence only pays off under a condition the attacker does not control: the key has to be a collection or empty, which real configuration files rarely contain, and something has to read the same document in the other form for the two answers to disagree. That condition is what lowers it out of High. It does not fall to Low because charter principle IV treats a differential as a genuine risk rather than a cosmetic inconsistency, and detect verified the two forms producing different key names by running them side by side rather than inferring it.
-- **Upholds:** IV. Malformed input is rejected, never guessed, III. Hostile input never exhausts the host
-- **Fix:** Give both mapping styles one naming rule, held in the shared key-stringifier: drop the flow mapping reader's plain string conversion and route its key through that stringifier, as the indentation-style reader already does. Under that rule a scalar key becomes its text form, with `null` becoming the empty name as the shared stringifier does today and **yaml** does (`eemeli-yaml/src/nodes/addPairToJSMap.ts:42-50`), and a key that is a sequence or a mapping, written out or reached through an alias, is rejected with the parser's `SyntaxError`.
-
-  Rejecting collection keys is **js-yaml**'s rule since v5, because an object-based map has no faithful property name for a collection (`nodeca-js-yaml/src/tag/mapping/map.ts:35-38`, `nodeca-js-yaml/CHANGELOG.md:162-168`). **yaml** re-serialises the collection into a name and only warns (`eemeli-yaml/src/nodes/addPairToJSMap.ts:50-64`), which is the same invented name detect found here as `["a","b"]` and `a,b`, so it is not followed. Refusing also means no key is ever serialised while parsing, so an alias key pointing at a large anchored collection cannot expand inside the parser.
-
-  Pin it with a test that parses the same logical document in both syntaxes and asserts identical key sets, and with cases asserting that a sequence key, a mapping key and an alias to either are rejected in both syntaxes, including the explicit-key form and the inline pair inside a flow sequence.
-
-- **References:** [CWE-436: Interpretation Conflict](https://cwe.mitre.org/data/definitions/436.html), [CWE-1289: Improper Validation of Unsafe Equivalence in Input](https://cwe.mitre.org/data/definitions/1289.html)
 
 ### Explicit type tags are discarded, so values keep the type the parser guesses
 

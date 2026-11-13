@@ -127,3 +127,17 @@
 - **Category:** Uncontrolled recursive entity expansion, the "billion laughs" denial of service (CWE-776, CWE-400)
 - **What it is:** An anchor stores a value under a name and an alias hands the stored value straight back, by reference rather than by copy. The resolver keeps no count of how many times an anchor is referenced, how deeply aliases chain into each other, or how large the referenced value is, and anchors accumulate for the whole document with no cap. Both the indentation-style and the bracket-and-brace readers store whatever the lookup returns without any budget on the path.
 - **Closed:** 2026-11-13
+
+### Mapping keys are coerced to strings, so distinct keys silently collide
+
+- **Classification:** High
+- **Category:** Duplicate key collision through unsafe input equivalence (CWE-1289)
+- **What it is:** Every key parsed from a mapping is resolved to a typed value and then converted to a string before it is stored, and nothing checks whether that string was already used by an earlier entry, so a later entry silently replaces an earlier one.
+- **Closed:** 2026-11-13
+
+### Block and flow mappings stringify the same key by different rules
+
+- **Classification:** Medium
+- **Category:** Interpretation conflict, parser differential (CWE-436)
+- **What it is:** Both mapping styles must turn a parsed key into a property name and they do it two different ways. The indentation style uses the shared key-stringifier. The bracket-and-brace style uses a plain string conversion instead. The same key therefore lands under different names depending only on which syntax the document used: a list key becomes `a,b` in one style and `["a","b"]` in the other, and an empty key becomes `null` in one and an empty name in the other.
+- **Closed:** 2026-11-13

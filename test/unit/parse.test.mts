@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, strict } from 'poku';
-import ts from 'typescript';
+import typescript from 'typescript';
 import { assertParsesTo, read } from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
@@ -22,18 +22,21 @@ const RESULT_TYPE_FIXTURE = fileURLToPath(
 );
 
 const typeErrorsIn = (file: string): string[] => {
-  const { config } = ts.readConfigFile(TEST_TSCONFIG, ts.sys.readFile);
-  const { options } = ts.parseJsonConfigFileContent(
+  const { config } = typescript.readConfigFile(
+    TEST_TSCONFIG,
+    typescript.sys.readFile
+  );
+  const { options } = typescript.parseJsonConfigFileContent(
     config,
-    ts.sys,
+    typescript.sys,
     dirname(TEST_TSCONFIG)
   );
-  const program = ts.createProgram([file], options);
+  const program = typescript.createProgram([file], options);
 
-  return ts
+  return typescript
     .getPreEmitDiagnostics(program)
     .map((diagnostic) =>
-      ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
+      typescript.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
     );
 };
 

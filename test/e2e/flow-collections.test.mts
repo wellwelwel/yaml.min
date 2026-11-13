@@ -97,21 +97,21 @@ describe('Implicit pairs in flow sequences', () => {
       { foo: 'bar' },
     ]));
 
-  it('key: , in flow seq', () =>
+  it('key: , in flow sequence', () =>
     assertParsesTo(read('flow-collections--flow-key-comma.yaml'), [
       { a: null },
       'b',
     ]));
 
-  it('key: at end of flow seq', () =>
+  it('key: at end of flow sequence', () =>
     assertParsesTo(read('flow-collections--flow-key-end.yaml'), [{ a: 1 }]));
 
-  it('implicit key in flow seq colon then bracket', () =>
+  it('implicit key in flow sequence colon then bracket', () =>
     assertParsesTo(read('flow-collections--flow-implicit-key-bracket.yaml'), [
       { a: null },
     ]));
 
-  it('implicit key in flow seq colon-comma', () =>
+  it('implicit key in flow sequence colon-comma', () =>
     assertParsesTo(read('flow-collections--flow-implicit-key-comma.yaml'), [
       { a: null },
       'b',
@@ -119,7 +119,7 @@ describe('Implicit pairs in flow sequences', () => {
 });
 
 describe('Mixed flow and block', () => {
-  it('flow seq in block map', () =>
+  it('flow sequence in block map', () =>
     assertParsesTo(read('flow-collections--mixed-flow-seq-in-block.yaml'), {
       items: [1, 2, 3],
       name: 'test',

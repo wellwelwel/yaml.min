@@ -46,16 +46,18 @@ const readEveryDocument = (state: ParserState): unknown[] => {
 /**
  * Parses a YAML v1.2 string that holds a single document.
  *
- * - The result is `unknown` because nothing checks its shape: validate it before use.
+ * - The result is `unknown`: validate its shape before use.
  * - It holds only plain objects, arrays, strings, numbers, booleans, and `null`, never `undefined`.
  * - No mapping key in it is named `__proto__`, `constructor`, or `prototype`.
+ * - Each mapping key is the text form of a scalar, with `null` as `''`, and appears once in its mapping.
  * - Test for a key with `Object.hasOwn()`, not `in`.
  * - An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears.
  * - Numbers are `Infinity`, `-Infinity`, or `NaN` only for YAML's `.inf`, `-.inf`, and `.nan` forms, and those values do not survive a JSON round trip.
  * - A numeral too large for a number, such as `1e999`, stays a string.
  *
  * @throws {TypeError} When `input` is not a string.
- * @throws {SyntaxError} When `input` is not valid YAML, holds more than one document (use `parseAll` for a stream), nests collections more than 256 levels deep, has aliases that repeat more than the larger of 1,000,000 characters and 10 times its length, has an alias inside the node its own anchor labels, exhausts an engine limit such as the call stack, or has a mapping key named `__proto__`, `constructor`, or `prototype`.
+ * @throws {SyntaxError} When `input` is not valid YAML, holds more than one document (use `parseAll` for a stream), nests collections more than 256 levels deep, has aliases that repeat more than the larger of 1,000,000 characters and 10 times its length, has an alias inside the node its own anchor labels, or exhausts an engine limit such as the call stack.
+ * @throws {SyntaxError} When a mapping key is a sequence or a mapping, repeats in its mapping (including keys that only share a text form, such as `0x10` and `16`), or is named `__proto__`, `constructor`, or `prototype`.
  */
 export const parse = (input: string): unknown =>
   readWithinEngineLimits(input, readSingleDocument);
@@ -66,7 +68,8 @@ export const parse = (input: string): unknown =>
  * Each document follows the same contract as `parse`, and an anchor is only visible inside its own document.
  *
  * @throws {TypeError} When `input` is not a string.
- * @throws {SyntaxError} When any document in `input` is not valid YAML, nests collections more than 256 levels deep, has an alias inside the node its own anchor labels, exhausts an engine limit such as the call stack, or has a mapping key named `__proto__`, `constructor`, or `prototype`.
+ * @throws {SyntaxError} When any document in `input` is not valid YAML, nests collections more than 256 levels deep, has an alias inside the node its own anchor labels, or exhausts an engine limit such as the call stack.
+ * @throws {SyntaxError} When a mapping key in any document is a sequence or a mapping, repeats in its mapping (including keys that only share a text form, such as `0x10` and `16`), or is named `__proto__`, `constructor`, or `prototype`.
  * @throws {SyntaxError} When the aliases of all documents together repeat more than the larger of 1,000,000 characters and 10 times the length of `input`.
  */
 export const parseAll = (input: string): unknown[] =>

@@ -20,7 +20,7 @@ import {
 import { enterCollection, leaveCollection } from './depth.js';
 import { syntaxError } from './errors.js';
 import { parseFlowMap, parseFlowSequence } from './flow.js';
-import { setMapKey, stringifyKey } from './keys.js';
+import { collectionKeyError, setMapKey } from './keys.js';
 import {
   isAtLineBreakOrEnd,
   isBlankOrEnd,
@@ -57,6 +57,10 @@ const isExplicitKey = (state: ParserState): boolean =>
 
 const isMappingValue = (state: ParserState): boolean =>
   isIndicatorAt(state, CHAR_COLON);
+
+const opensBlockCollection = (state: ParserState, code: number): boolean =>
+  (code === CHAR_MINUS || code === CHAR_QUESTION) &&
+  isBlankOrEnd(state, state.pos + 1);
 
 const skipIndicator = (state: ParserState): void => {
   state.pos++;
@@ -234,6 +238,8 @@ const parseMapKey = (state: ParserState, indent: number): unknown => {
   if (keyCode === CHAR_LEFT_BRACKET) return parseFlowSequence(state, indent);
   if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent);
   if (keyCode === CHAR_STAR) return parseAlias(state);
+  if (opensBlockCollection(state, keyCode))
+    throw collectionKeyError(state, state.pos);
 
   return resolveScalar(parsePlainKey(state));
 };
@@ -257,13 +263,7 @@ const parseMapEntry = (
     );
 
   skipIndicator(state);
-  setMapKey(
-    state,
-    result,
-    stringifyKey(key),
-    entryStart,
-    parseMapValue(state, indent)
-  );
+  setMapKey(state, result, key, entryStart, parseMapValue(state, indent));
   finishLine(state);
 };
 
@@ -288,13 +288,7 @@ const parseExplicitKey = (
 
   if (nextIndent === indent && isMappingValue(state)) {
     skipIndicator(state);
-    setMapKey(
-      state,
-      result,
-      stringifyKey(key),
-      keyStart,
-      parseMapValue(state, indent)
-    );
+    setMapKey(state, result, key, keyStart, parseMapValue(state, indent));
     finishLine(state);
 
     return;
@@ -306,7 +300,7 @@ const parseExplicitKey = (
       `An explicit key is followed by an unexpected line: expected ":" at ${indent} spaces of indentation, or the next entry`
     );
 
-  setMapKey(state, result, stringifyKey(key), keyStart, null);
+  setMapKey(state, result, key, keyStart, null);
 
   state.pos -= nextIndent;
 };

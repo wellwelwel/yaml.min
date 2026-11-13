@@ -85,8 +85,6 @@ describe('Maximum nesting depth', () => {
     'flow sequences': (levels) => `${'['.repeat(levels)}x${']'.repeat(levels)}`,
     'flow mappings as values': (levels) =>
       `${'{a: '.repeat(levels)}x${'}'.repeat(levels)}`,
-    'flow mappings as keys': (levels) =>
-      `${'{'.repeat(levels)}a: 1}${': 1}'.repeat(levels - 1)}`,
     'implicit pairs in a flow sequence': (levels) =>
       `[${'a: '.repeat(levels - 1)}x]`,
     'sequences of mappings sharing their indentation': (levels) => {
@@ -114,6 +112,7 @@ describe('Maximum nesting depth', () => {
   const pathologicalDocuments = {
     '100,000 opening brackets': '['.repeat(100_000),
     '100,000 nested flow mappings': '{a: '.repeat(100_000),
+    '100,000 flow mappings nested as keys': `${'{'.repeat(100_000)}a: 1}${': 1}'.repeat(99_999)}`,
     '100,000 compact dashes': '- '.repeat(100_000),
   };
 

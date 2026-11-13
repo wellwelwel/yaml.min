@@ -11,36 +11,66 @@ const PROTOTYPE_KEY_LENGTHS = Array.from(PROTOTYPE_KEYS, (key) => key.length);
 const SHORTEST_PROTOTYPE_KEY_LENGTH = Math.min(...PROTOTYPE_KEY_LENGTHS);
 const LONGEST_PROTOTYPE_KEY_LENGTH = Math.max(...PROTOTYPE_KEY_LENGTHS);
 
-const isPrototypeKey = (key: string): boolean =>
-  key.length >= SHORTEST_PROTOTYPE_KEY_LENGTH &&
-  key.length <= LONGEST_PROTOTYPE_KEY_LENGTH &&
-  PROTOTYPE_KEYS.has(key);
+const isPrototypeKey = (name: string): boolean =>
+  name.length >= SHORTEST_PROTOTYPE_KEY_LENGTH &&
+  name.length <= LONGEST_PROTOTYPE_KEY_LENGTH &&
+  PROTOTYPE_KEYS.has(name);
 
 const prototypeKeyError = (
   state: ParserState,
-  key: string,
+  name: string,
   keyStart: number
 ): SyntaxError =>
   syntaxError(
     state,
-    `The mapping key "${key}" can reach an object's prototype: expected a key other than "__proto__", "constructor", or "prototype"`,
+    `The mapping key "${name}" can reach an object's prototype: expected a key other than "__proto__", "constructor", or "prototype"`,
     keyStart
   );
+
+export const collectionKeyError = (
+  state: ParserState,
+  keyStart: number
+): SyntaxError =>
+  syntaxError(
+    state,
+    'A mapping key is a sequence or a mapping: expected a scalar key, such as text, a number, a boolean, or null',
+    keyStart
+  );
+
+const duplicateKeyError = (
+  state: ParserState,
+  name: string,
+  keyStart: number
+): SyntaxError =>
+  syntaxError(
+    state,
+    `The mapping key ${JSON.stringify(name)} appears more than once in the same mapping: expected every key of a mapping to be unique`,
+    keyStart
+  );
+
+const stringifyKey = (
+  state: ParserState,
+  key: unknown,
+  keyStart: number
+): string => {
+  if (typeof key === 'object' && key !== null)
+    throw collectionKeyError(state, keyStart);
+
+  return key == null ? '' : String(key);
+};
 
 export const setMapKey = (
   state: ParserState,
   target: Record<string, unknown>,
-  key: string,
+  key: unknown,
   keyStart: number,
   value: unknown
 ): void => {
-  if (isPrototypeKey(key)) throw prototypeKeyError(state, key, keyStart);
+  const name = stringifyKey(state, key, keyStart);
 
-  target[key] = value;
-};
+  if (isPrototypeKey(name)) throw prototypeKeyError(state, name, keyStart);
+  if (Object.hasOwn(target, name))
+    throw duplicateKeyError(state, name, keyStart);
 
-export const stringifyKey = (key: unknown): string => {
-  if (typeof key === 'object' && key !== null) return JSON.stringify(key);
-
-  return String(key == null ? '' : key);
+  target[name] = value;
 };
