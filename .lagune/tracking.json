@@ -24,15 +24,6 @@
       ]
     },
     {
-      "name": "Prototype-chain gadget keys survive into the parsed result",
-      "paths": [
-        "src/internal/keys.ts",
-        "src/internal/block.ts",
-        "src/internal/flow.ts",
-        "test/e2e/mapping-keys.test.mts"
-      ]
-    },
-    {
       "name": "Mapping keys are coerced to strings, so distinct keys silently collide",
       "paths": [
         "src/internal/keys.ts",

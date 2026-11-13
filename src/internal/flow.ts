@@ -3,15 +3,15 @@ import { parseAlias, readAnchorOrTag, withAnchor } from './anchors.js';
 import {
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_DQUOTE,
+  CHAR_DOUBLE_QUOTE,
   CHAR_HASH,
-  CHAR_LBRACE,
-  CHAR_LBRACKET,
+  CHAR_LEFT_BRACE,
+  CHAR_LEFT_BRACKET,
   CHAR_QUESTION,
-  CHAR_RBRACE,
-  CHAR_RBRACKET,
+  CHAR_RIGHT_BRACE,
+  CHAR_RIGHT_BRACKET,
+  CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
-  CHAR_SQUOTE,
   CHAR_STAR,
   isBlank,
   isLineBreak,
@@ -35,15 +35,15 @@ import {
 const FLOW_SEQUENCE: FlowCollection = {
   name: 'flow sequence',
   open: '[',
-  closeCode: CHAR_RBRACKET,
-  foreignCloseCode: CHAR_RBRACE,
+  closeCode: CHAR_RIGHT_BRACKET,
+  foreignCloseCode: CHAR_RIGHT_BRACE,
 };
 
 const FLOW_MAPPING: FlowCollection = {
   name: 'flow mapping',
   open: '{',
-  closeCode: CHAR_RBRACE,
-  foreignCloseCode: CHAR_RBRACKET,
+  closeCode: CHAR_RIGHT_BRACE,
+  foreignCloseCode: CHAR_RIGHT_BRACKET,
 };
 
 const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
@@ -60,8 +60,8 @@ const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
   if (
     isLineBreak(code) ||
     code === CHAR_HASH ||
-    code === CHAR_RBRACKET ||
-    code === CHAR_RBRACE
+    code === CHAR_RIGHT_BRACKET ||
+    code === CHAR_RIGHT_BRACE
   )
     return;
 
@@ -106,7 +106,11 @@ const isFlowTerminator = (state: ParserState): boolean => {
 
   const code = state.src.charCodeAt(state.pos);
 
-  return code === CHAR_COMMA || code === CHAR_RBRACKET || code === CHAR_RBRACE;
+  return (
+    code === CHAR_COMMA ||
+    code === CHAR_RIGHT_BRACKET ||
+    code === CHAR_RIGHT_BRACE
+  );
 };
 
 const unclosedError = (
@@ -190,14 +194,15 @@ const isImplicitPairColon = (state: ParserState): boolean => {
   return (
     afterColon === CHAR_SPACE ||
     afterColon === CHAR_COMMA ||
-    afterColon === CHAR_RBRACKET
+    afterColon === CHAR_RIGHT_BRACKET
   );
 };
 
 const completeImplicitPair = (
   state: ParserState,
   ownerIndent: number,
-  key: unknown
+  key: unknown,
+  keyStart: number
 ): unknown => {
   skipSpaces(state);
 
@@ -207,7 +212,13 @@ const completeImplicitPair = (
 
   state.pos++;
   skipFlowSeparation(state, ownerIndent);
-  setMapKey(pair, String(key), parseFlowValue(state, ownerIndent));
+  setMapKey(
+    state,
+    pair,
+    String(key),
+    keyStart,
+    parseFlowValue(state, ownerIndent)
+  );
 
   return pair;
 };
@@ -219,17 +230,18 @@ const parseFlowNode = (
 ): unknown => {
   const code = state.src.charCodeAt(state.pos);
 
-  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LBRACKET) return parseFlowSeq(state, ownerIndent);
-  if (code === CHAR_LBRACE) return parseFlowMap(state, ownerIndent);
+  if (code === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
+  if (code === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
+  if (code === CHAR_LEFT_BRACKET) return parseFlowSequence(state, ownerIndent);
+  if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
   if (code === CHAR_STAR) return parseAlias(state);
   if (isFlowTerminator(state)) return null;
 
+  const scalarStart = state.pos;
   const scalar = resolveScalar(parsePlainScalar(state, ownerIndent, true));
 
   return allowsImplicitPair
-    ? completeImplicitPair(state, ownerIndent, scalar)
+    ? completeImplicitPair(state, ownerIndent, scalar, scalarStart)
     : scalar;
 };
 
@@ -244,7 +256,6 @@ const skipExplicitKeyIndicator = (
   ownerIndent: number
 ): void => {
   if (state.src.charCodeAt(state.pos) !== CHAR_QUESTION) return;
-
   if (!isBlank(state.src.charCodeAt(state.pos + 1))) return;
 
   state.pos++;
@@ -262,7 +273,11 @@ const parseFlowMapValue = (
 
   const code = state.src.charCodeAt(state.pos);
 
-  if (state.pos >= state.len || code === CHAR_COMMA || code === CHAR_RBRACE)
+  if (
+    state.pos >= state.len ||
+    code === CHAR_COMMA ||
+    code === CHAR_RIGHT_BRACE
+  )
     return null;
 
   const valueAnchor = readAnchorOrTag(state);
@@ -270,7 +285,7 @@ const parseFlowMapValue = (
   return withAnchor(state, valueAnchor, parseFlowValue(state, ownerIndent));
 };
 
-export const parseFlowSeq = (
+export const parseFlowSequence = (
   state: ParserState,
   ownerIndent: number
 ): unknown[] => {
@@ -302,6 +317,7 @@ export const parseFlowMap = (
   while (openFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) {
     skipExplicitKeyIndicator(state, ownerIndent);
 
+    const keyStart = state.pos;
     const keyAnchor = readAnchorOrTag(state);
     const key = withAnchor(
       state,
@@ -310,7 +326,13 @@ export const parseFlowMap = (
     );
 
     skipFlowSeparation(state, ownerIndent);
-    setMapKey(result, String(key), parseFlowMapValue(state, ownerIndent));
+    setMapKey(
+      state,
+      result,
+      String(key),
+      keyStart,
+      parseFlowMapValue(state, ownerIndent)
+    );
 
     if (!closeFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) break;
   }

@@ -1,11 +1,11 @@
 import type { ParserState } from '../types.js';
 import {
-  CHAR_AMP,
+  CHAR_AMPERSAND,
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_EXCL,
-  CHAR_RBRACE,
-  CHAR_RBRACKET,
+  CHAR_EXCLAMATION,
+  CHAR_RIGHT_BRACE,
+  CHAR_RIGHT_BRACKET,
   isBlank,
 } from './chars.js';
 import { syntaxError } from './errors.js';
@@ -14,8 +14,8 @@ import { isBlankOrEnd, skipSpaces } from './navigation.js';
 const isAnchorNameEnd = (code: number): boolean =>
   isBlank(code) ||
   code === CHAR_COMMA ||
-  code === CHAR_RBRACKET ||
-  code === CHAR_RBRACE ||
+  code === CHAR_RIGHT_BRACKET ||
+  code === CHAR_RIGHT_BRACE ||
   code === CHAR_COLON;
 
 const readAnchorName = (state: ParserState): string => {
@@ -42,12 +42,12 @@ export const readAnchorOrTag = (state: ParserState): string | undefined => {
 
     const code = state.src.charCodeAt(state.pos);
 
-    if (code === CHAR_EXCL) {
+    if (code === CHAR_EXCLAMATION) {
       skipTag(state);
       continue;
     }
 
-    if (code !== CHAR_AMP) break;
+    if (code !== CHAR_AMPERSAND) break;
 
     if (anchor !== undefined)
       throw syntaxError(

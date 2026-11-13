@@ -1,9 +1,9 @@
 import type { ParserState } from '../types.js';
 import {
-  CHAR_CR,
+  CHAR_CARRIAGE_RETURN,
   CHAR_DOT,
   CHAR_HASH,
-  CHAR_LF,
+  CHAR_LINE_FEED,
   CHAR_MINUS,
   CHAR_SPACE,
   CHAR_TAB,
@@ -19,8 +19,8 @@ export const isAtLineBreakOrEnd = (state: ParserState): boolean =>
   state.pos >= state.len || isLineBreak(state.src.charCodeAt(state.pos));
 
 export const lineBreakWidth = (state: ParserState, position: number): number =>
-  state.src.charCodeAt(position) === CHAR_CR &&
-  state.src.charCodeAt(position + 1) === CHAR_LF
+  state.src.charCodeAt(position) === CHAR_CARRIAGE_RETURN &&
+  state.src.charCodeAt(position + 1) === CHAR_LINE_FEED
     ? 2
     : 1;
 
@@ -69,7 +69,10 @@ export const skipSpaces = (state: ParserState): void => {
 
 export const skipComment = (state: ParserState): void => {
   if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_HASH) {
-    while (state.pos < state.len && state.src.charCodeAt(state.pos) !== CHAR_LF)
+    while (
+      state.pos < state.len &&
+      state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
+    )
       state.pos++;
   }
 };

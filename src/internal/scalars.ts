@@ -13,9 +13,9 @@ import {
   CHAR_UPPER_F,
   CHAR_UPPER_N,
   CHAR_UPPER_T,
-  hexDigitValue,
-  RE_FLOAT,
-  RE_INFINITY,
+  FLOAT_NUMERAL,
+  hexadecimalDigitValue,
+  INFINITY_NUMERAL,
 } from './chars.js';
 
 const RADIX_PREFIX_LENGTH = 2;
@@ -24,7 +24,7 @@ const isDigitRun = (raw: string, start: number, radix: number): boolean => {
   if (start >= raw.length) return false;
 
   for (let index = start; index < raw.length; index++) {
-    const digit = hexDigitValue(raw.charCodeAt(index));
+    const digit = hexadecimalDigitValue(raw.charCodeAt(index));
 
     if (digit === -1 || digit >= radix) return false;
   }
@@ -63,7 +63,7 @@ const resolveNumeral = (raw: string): number | undefined => {
 
   if (integer !== undefined) return integer;
 
-  if (RE_FLOAT.test(raw)) return Number.parseFloat(raw);
+  if (FLOAT_NUMERAL.test(raw)) return Number.parseFloat(raw);
 
   return undefined;
 };
@@ -103,7 +103,7 @@ export const resolveScalar = (raw: string): unknown => {
 
     if (Number.isFinite(numeral)) return numeral;
 
-    if (RE_INFINITY.test(raw))
+    if (INFINITY_NUMERAL.test(raw))
       return firstCharCode === CHAR_MINUS
         ? Number.NEGATIVE_INFINITY
         : Number.POSITIVE_INFINITY;

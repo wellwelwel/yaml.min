@@ -1,6 +1,11 @@
 import type { ParserState } from '../types.js';
 import { parseValue } from './block.js';
-import { CHAR_BOM, CHAR_LF, CHAR_PERCENT, NON_PRINTABLE } from './chars.js';
+import {
+  CHAR_BYTE_ORDER_MARK,
+  CHAR_LINE_FEED,
+  CHAR_PERCENT,
+  NON_PRINTABLE,
+} from './chars.js';
 import { syntaxError } from './errors.js';
 import {
   isAtLineBreakOrEnd,
@@ -38,7 +43,8 @@ export const createParserState = (input: string): ParserState => {
       'The input is not a string: expected a string holding the YAML source'
     );
 
-  const src = input.charCodeAt(0) === CHAR_BOM ? input.slice(1) : input;
+  const src =
+    input.charCodeAt(0) === CHAR_BYTE_ORDER_MARK ? input.slice(1) : input;
   const state: ParserState = {
     src,
     len: src.length,
@@ -90,7 +96,10 @@ export const skipToDocument = (state: ParserState): boolean => {
       return true;
     }
 
-    while (state.pos < state.len && state.src.charCodeAt(state.pos) !== CHAR_LF)
+    while (
+      state.pos < state.len &&
+      state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
+    )
       state.pos++;
   }
 

@@ -1,12 +1,12 @@
 import type { ParserState } from '../types.js';
-import { CHAR_LF } from './chars.js';
+import { CHAR_LINE_FEED } from './chars.js';
 
 const describePosition = (src: string, position: number): string => {
   let line = 1;
   let lineStart = 0;
 
   for (let index = 0; index < position; index++) {
-    if (src.charCodeAt(index) !== CHAR_LF) continue;
+    if (src.charCodeAt(index) !== CHAR_LINE_FEED) continue;
 
     line++;
     lineStart = index + 1;

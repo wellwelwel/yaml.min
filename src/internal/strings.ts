@@ -6,22 +6,22 @@ import {
   CHAR_BACKSLASH,
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_DQUOTE,
+  CHAR_DOUBLE_QUOTE,
   CHAR_HASH,
-  CHAR_LBRACE,
-  CHAR_LBRACKET,
+  CHAR_LEFT_BRACE,
+  CHAR_LEFT_BRACKET,
   CHAR_LOWER_U,
   CHAR_LOWER_X,
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_PLUS,
-  CHAR_RBRACE,
-  CHAR_RBRACKET,
+  CHAR_RIGHT_BRACE,
+  CHAR_RIGHT_BRACKET,
+  CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
-  CHAR_SQUOTE,
   CHAR_TAB,
   CHAR_UPPER_U,
-  hexDigitValue,
+  hexadecimalDigitValue,
   isBlank,
   isLineBreak,
   isSpaceOrTab,
@@ -102,7 +102,7 @@ const readHexEscape = (
   let value = 0;
 
   for (let index = state.pos; index < digitsEnd; index++) {
-    const digit = hexDigitValue(state.src.charCodeAt(index));
+    const digit = hexadecimalDigitValue(state.src.charCodeAt(index));
 
     if (digit === -1)
       throw syntaxError(
@@ -217,20 +217,20 @@ export const parseSingleQuoted = (state: ParserState): string => {
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
 
-    if (code !== CHAR_SQUOTE && !isLineBreak(code)) {
+    if (code !== CHAR_SINGLE_QUOTE && !isLineBreak(code)) {
       state.pos++;
       continue;
     }
 
     result += state.src.slice(captureStart, state.pos);
 
-    if (code !== CHAR_SQUOTE) {
+    if (code !== CHAR_SINGLE_QUOTE) {
       result += foldQuotedLineBreaks(state);
       captureStart = state.pos;
       continue;
     }
 
-    if (state.src.charCodeAt(state.pos + 1) !== CHAR_SQUOTE) {
+    if (state.src.charCodeAt(state.pos + 1) !== CHAR_SINGLE_QUOTE) {
       state.pos++;
       return result;
     }
@@ -258,14 +258,18 @@ export const parseDoubleQuoted = (state: ParserState): string => {
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
 
-    if (code !== CHAR_DQUOTE && code !== CHAR_BACKSLASH && !isLineBreak(code)) {
+    if (
+      code !== CHAR_DOUBLE_QUOTE &&
+      code !== CHAR_BACKSLASH &&
+      !isLineBreak(code)
+    ) {
       state.pos++;
       continue;
     }
 
     result += state.src.slice(captureStart, state.pos);
 
-    if (code === CHAR_DQUOTE) {
+    if (code === CHAR_DOUBLE_QUOTE) {
       state.pos++;
       return result;
     }
@@ -465,17 +469,17 @@ const endsPlainScalarAtColon = (
   return (
     afterColon === CHAR_SPACE ||
     afterColon === CHAR_COMMA ||
-    afterColon === CHAR_RBRACKET ||
-    afterColon === CHAR_RBRACE
+    afterColon === CHAR_RIGHT_BRACKET ||
+    afterColon === CHAR_RIGHT_BRACE
   );
 };
 
 const isFlowIndicator = (code: number): boolean =>
   code === CHAR_COMMA ||
-  code === CHAR_RBRACKET ||
-  code === CHAR_RBRACE ||
-  code === CHAR_LBRACE ||
-  code === CHAR_LBRACKET;
+  code === CHAR_RIGHT_BRACKET ||
+  code === CHAR_RIGHT_BRACE ||
+  code === CHAR_LEFT_BRACE ||
+  code === CHAR_LEFT_BRACKET;
 
 export const findPlainLineEnd = (
   state: ParserState,
@@ -529,7 +533,9 @@ const isPlainContinuation = (
 
   if (
     inFlow &&
-    (code === CHAR_COMMA || code === CHAR_RBRACKET || code === CHAR_RBRACE)
+    (code === CHAR_COMMA ||
+      code === CHAR_RIGHT_BRACKET ||
+      code === CHAR_RIGHT_BRACE)
   )
     return false;
 

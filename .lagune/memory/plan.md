@@ -5,21 +5,6 @@
 
 ## Fixes
 
-### Prototype-chain gadget keys survive into the parsed result
-
-- **Category:** Prototype pollution (CWE-1321)
-- **CVSS:** CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:H/SI:H/SA:N (9.3, Critical)
-- **Priority:** Critical
-- **Why this priority:** Nothing stands in front of this: the document is the whole attack, and detect records this library sitting inside other people's servers, build pipelines and CI, parsing files an outside party can influence, so the reach stays fully networked. The stakes are as high as this project has, because the damage does not stop at the parsed value: it lands on the application that embedded the parser, through the recursive merge detect confirmed is the ordinary next step rather than an exotic gadget, and one published parser carries that into every application that installed it. Charter principle II names this exact outcome, so a wide blast radius plus a High integrity requirement keeps it at the top of the band with no downward move.
-- **Upholds:** II. Parsed data never reaches the prototype chain
-- **Fix:** Make the shared guarded key-assignment helper refuse every prototype-reaching name. When a key's final property name is `__proto__`, `constructor` or `prototype`, reject the document with the parser's `SyntaxError`. The check reads the name the helper receives, after unescaping, tag resolution and alias resolution, so `"__pro\x74o__"`, `!!str constructor` and an alias whose anchored value is `prototype` are caught exactly like the plain spelling. All five call sites (the ordinary mapping entry, the explicit key with a value, the explicit key without one, the flow mapping reader and the inline-pair reader) already route through that helper, so one rule covers every path, as the charter's governance clause requires.
-
-  Neither reference closes this, and following them would leave the gap with the caller. **js-yaml** guards `__proto__` alone and **yaml** guards `__proto__` and `constructor`, both by keeping the name as an own data property on an ordinary object (`nodeca-js-yaml/src/tag/mapping/map.ts:35-50`, `eemeli-yaml/src/nodes/addPairToJSMap.ts:20-37`). That stops pollution during the parse and nothing more: **js-yaml** tells callers to read results with `Object.hasOwn()` (`nodeca-js-yaml/src/tag/mapping/map.ts:4-24`), and the recursive merge detect confirmed stays open. A null-prototype result does not help either, since the caller's merge target is still an ordinary object. Rejection is the only control that holds entirely inside the parser.
-
-  Replace the single flow-mapping test with cases that drive each of the three names through all five paths, in plain, quoted, escaped, tagged and aliased spellings, and assert every one is rejected with `SyntaxError`. Add one case showing the same three words parse normally as values, so the rule stays on keys.
-
-- **References:** [CWE-1321: Improperly Controlled Modification of Object Prototype Attributes](https://cwe.mitre.org/data/definitions/1321.html), [CWE-915: Improperly Controlled Modification of Dynamically-Determined Object Attributes](https://cwe.mitre.org/data/definitions/915.html)
-
 ### The nesting depth limit does not cover every recursion path
 
 - **Category:** Uncontrolled recursion leading to stack exhaustion (CWE-674, CWE-400)

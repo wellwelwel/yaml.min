@@ -8,6 +8,14 @@ import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 import { assertParsesTo, read } from '../__helpers__/index.mts';
 
+type Spellings = Record<string, (name: string) => string>;
+
+type KeyForm = {
+  spellings: Spellings;
+  document: (key: string, name: string) => string;
+  parsedWithOrdinaryKey: unknown;
+};
+
 const require = createRequire(import.meta.url);
 const { parse } = require('../../src/index.ts');
 
@@ -47,24 +55,74 @@ describe('Collections and aliases as mapping keys', () => {
     assertParsesTo(read('mapping-keys--flow-map-alias-key.yaml'), { foo: 2 }));
 });
 
-describe('Keys named after prototype properties', () => {
-  const prototypeKeys = ['__proto__', 'constructor', 'prototype'];
-  const mappingsHolding = {
-    'a block mapping': (key: string) => parse(`${key}: [42]`),
-    'an explicit key': (key: string) => parse(`? ${key}\n: [42]`),
-    'a flow mapping': (key: string) => parse(`{ ${key}: [42] }`),
-    'a flow pair': (key: string) => parse(`[${key}: [42]]`)[0],
+describe('Mapping keys named after prototype properties', () => {
+  const prototypeNames = ['__proto__', 'constructor', 'prototype'];
+  const plainScalarSpellings: Spellings = {
+    plain: (name) => name,
+    'with a tag': (name) => `!!str ${name}`,
+  };
+  const everySpelling: Spellings = {
+    ...plainScalarSpellings,
+    'double-quoted': (name) => `"${name}"`,
+    'single-quoted': (name) => `'${name}'`,
+    'with an escape': (name) =>
+      `"\\x${name.charCodeAt(0).toString(16)}${name.slice(1)}"`,
+    'through an alias': () => '*name',
+  };
+  const keyForms: Record<string, KeyForm> = {
+    'a block mapping key': {
+      spellings: everySpelling,
+      document: (key, name) => `anchor: &name ${name}\n${key}: [42]\n`,
+      parsedWithOrdinaryKey: { anchor: 'title', title: [42] },
+    },
+    'an explicit key with a value': {
+      spellings: everySpelling,
+      document: (key, name) => `anchor: &name ${name}\n? ${key}\n: [42]\n`,
+      parsedWithOrdinaryKey: { anchor: 'title', title: [42] },
+    },
+    'an explicit key without a value': {
+      spellings: everySpelling,
+      document: (key, name) => `anchor: &name ${name}\n? ${key}\n`,
+      parsedWithOrdinaryKey: { anchor: 'title', title: null },
+    },
+    'a flow mapping key': {
+      spellings: everySpelling,
+      document: (key, name) => `{ anchor: &name ${name}, ${key}: [42] }`,
+      parsedWithOrdinaryKey: { anchor: 'title', title: [42] },
+    },
+    'a flow sequence pair key': {
+      spellings: plainScalarSpellings,
+      document: (key, name) => `[&name ${name}, ${key}: [42]]`,
+      parsedWithOrdinaryKey: ['title', { title: [42] }],
+    },
   };
 
-  for (const key of prototypeKeys) {
-    for (const [form, parseMapping] of Object.entries(mappingsHolding)) {
-      it(`keeps ${key} as an own key of ${form}`, () => {
-        const mapping = parseMapping(key);
+  for (const [
+    form,
+    { spellings, document, parsedWithOrdinaryKey },
+  ] of Object.entries(keyForms)) {
+    for (const [spelling, spell] of Object.entries(spellings)) {
+      it(`accepts an ordinary key written ${spelling} as ${form}`, () =>
+        assertParsesTo(
+          document(spell('title'), 'title'),
+          parsedWithOrdinaryKey
+        ));
 
-        strict.deepEqual(Object.keys(mapping), [key]);
-        strict.deepEqual(mapping[key], [42]);
-        strict.equal(Object.getPrototypeOf(mapping), Object.prototype);
-      });
+      for (const name of prototypeNames) {
+        it(`rejects ${name} written ${spelling} as ${form}`, () =>
+          strict.throws(() => parse(document(spell(name), name)), SyntaxError));
+      }
     }
   }
+
+  for (const name of prototypeNames) {
+    it(`rejects a flow mapping sequence key that becomes ${name}`, () =>
+      strict.throws(() => parse(`{ [${name}]: [42] }`), SyntaxError));
+  }
+
+  it('accepts the same names as values', () =>
+    assertParsesTo('first: __proto__\nrest: [constructor, prototype]\n', {
+      first: '__proto__',
+      rest: ['constructor', 'prototype'],
+    }));
 });

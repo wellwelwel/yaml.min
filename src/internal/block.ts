@@ -3,22 +3,22 @@ import { parseAlias, readAnchorOrTag, withAnchor } from './anchors.js';
 import {
   CHAR_BACKSLASH,
   CHAR_COLON,
-  CHAR_DQUOTE,
-  CHAR_GT,
-  CHAR_LBRACE,
-  CHAR_LBRACKET,
+  CHAR_DOUBLE_QUOTE,
+  CHAR_GREATER_THAN,
+  CHAR_LEFT_BRACE,
+  CHAR_LEFT_BRACKET,
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_QUESTION,
+  CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
-  CHAR_SQUOTE,
   CHAR_STAR,
   CHAR_TAB,
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
 import { rangeError, syntaxError } from './errors.js';
-import { parseFlowMap, parseFlowSeq } from './flow.js';
+import { parseFlowMap, parseFlowSequence } from './flow.js';
 import { setMapKey, stringifyKey } from './keys.js';
 import {
   isAtLineBreakOrEnd,
@@ -73,7 +73,7 @@ const isQuotedMapKey = (state: ParserState, quoteCharCode: number): boolean => {
     state.src.charCodeAt(lookAhead) !== quoteCharCode
   ) {
     if (
-      quoteCharCode === CHAR_DQUOTE &&
+      quoteCharCode === CHAR_DOUBLE_QUOTE &&
       state.src.charCodeAt(lookAhead) === CHAR_BACKSLASH
     )
       lookAhead++;
@@ -152,10 +152,12 @@ const parseNextLineValue = (
 
   state.pos -= nextIndent;
 
-  return opensIndentlessSequence ? parseBlockSeq(state, ownerIndent) : null;
+  return opensIndentlessSequence
+    ? parseBlockSequence(state, ownerIndent)
+    : null;
 };
 
-const parseSeqEntry = (state: ParserState, indent: number): unknown => {
+const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
   const dashStart = state.pos;
 
   state.pos++;
@@ -176,14 +178,14 @@ const parseSeqEntry = (state: ParserState, indent: number): unknown => {
   return withAnchor(state, anchor, value);
 };
 
-const parseBlockSeq = (
+const parseBlockSequence = (
   state: ParserState,
   indent: number,
   isInline = false
 ): unknown[] => {
   const result: unknown[] = [];
 
-  if (isInline) result.push(parseSeqEntry(state, indent));
+  if (isInline) result.push(parseSequenceEntry(state, indent));
 
   while (enterBlockLine(state, indent)) {
     if (!isSequenceEntry(state)) {
@@ -191,7 +193,7 @@ const parseBlockSeq = (
       break;
     }
 
-    result.push(parseSeqEntry(state, indent));
+    result.push(parseSequenceEntry(state, indent));
   }
 
   return result;
@@ -202,17 +204,12 @@ const parseMapValueContent = (state: ParserState, indent: number): unknown => {
 
   const valueCode = state.src.charCodeAt(state.pos);
 
-  if (valueCode === CHAR_SQUOTE) return parseSingleQuoted(state);
-
-  if (valueCode === CHAR_DQUOTE) return parseDoubleQuoted(state);
-
-  if (valueCode === CHAR_LBRACKET) return parseFlowSeq(state, indent);
-
-  if (valueCode === CHAR_LBRACE) return parseFlowMap(state, indent);
-
-  if (valueCode === CHAR_PIPE || valueCode === CHAR_GT)
+  if (valueCode === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
+  if (valueCode === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
+  if (valueCode === CHAR_LEFT_BRACKET) return parseFlowSequence(state, indent);
+  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent);
+  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
     return parseBlockScalar(state, indent);
-
   if (valueCode === CHAR_STAR) return parseAlias(state);
 
   return resolveScalar(parsePlainScalar(state, indent, false));
@@ -229,10 +226,10 @@ const parseMapValue = (state: ParserState, indent: number): unknown => {
 const parseMapKey = (state: ParserState, indent: number): unknown => {
   const keyCode = state.src.charCodeAt(state.pos);
 
-  if (keyCode === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (keyCode === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (keyCode === CHAR_LBRACKET) return parseFlowSeq(state, indent);
-  if (keyCode === CHAR_LBRACE) return parseFlowMap(state, indent);
+  if (keyCode === CHAR_SINGLE_QUOTE) return parseSingleQuoted(state);
+  if (keyCode === CHAR_DOUBLE_QUOTE) return parseDoubleQuoted(state);
+  if (keyCode === CHAR_LEFT_BRACKET) return parseFlowSequence(state, indent);
+  if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent);
   if (keyCode === CHAR_STAR) return parseAlias(state);
 
   return resolveScalar(parsePlainKey(state));
@@ -257,7 +254,13 @@ const parseMapEntry = (
     );
 
   skipIndicator(state);
-  setMapKey(result, stringifyKey(key), parseMapValue(state, indent));
+  setMapKey(
+    state,
+    result,
+    stringifyKey(key),
+    entryStart,
+    parseMapValue(state, indent)
+  );
   finishLine(state);
 };
 
@@ -268,6 +271,7 @@ const parseExplicitKey = (
 ): void => {
   skipIndicator(state);
 
+  const keyStart = state.pos;
   const keyAnchor = readAnchorOrTag(state);
   const key = withAnchor(
     state,
@@ -281,7 +285,13 @@ const parseExplicitKey = (
 
   if (nextIndent === indent && isMappingValue(state)) {
     skipIndicator(state);
-    setMapKey(result, stringifyKey(key), parseMapValue(state, indent));
+    setMapKey(
+      state,
+      result,
+      stringifyKey(key),
+      keyStart,
+      parseMapValue(state, indent)
+    );
     finishLine(state);
 
     return;
@@ -293,7 +303,7 @@ const parseExplicitKey = (
       `An explicit key is followed by an unexpected line: expected ":" at ${indent} spaces of indentation, or the next entry`
     );
 
-  setMapKey(result, stringifyKey(key), null);
+  setMapKey(state, result, stringifyKey(key), keyStart, null);
 
   state.pos -= nextIndent;
 };
@@ -330,28 +340,24 @@ const parseInlineValue = (
   ownerIndent: number,
   column: number
 ): unknown => {
-  const charCode = state.src.charCodeAt(state.pos);
+  const valueCode = state.src.charCodeAt(state.pos);
 
-  if (charCode === CHAR_SQUOTE || charCode === CHAR_DQUOTE) {
-    if (isQuotedMapKey(state, charCode))
+  if (valueCode === CHAR_SINGLE_QUOTE || valueCode === CHAR_DOUBLE_QUOTE) {
+    if (isQuotedMapKey(state, valueCode))
       return parseBlockMap(state, column, true);
 
-    return charCode === CHAR_SQUOTE
+    return valueCode === CHAR_SINGLE_QUOTE
       ? parseSingleQuoted(state)
       : parseDoubleQuoted(state);
   }
 
-  if (charCode === CHAR_LBRACKET) return parseFlowSeq(state, ownerIndent);
-
-  if (charCode === CHAR_LBRACE) return parseFlowMap(state, ownerIndent);
-
-  if (charCode === CHAR_PIPE || charCode === CHAR_GT)
+  if (valueCode === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, ownerIndent);
+  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
+  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
     return parseBlockScalar(state, ownerIndent);
-
-  if (charCode === CHAR_STAR) return parseAlias(state);
-
-  if (isSequenceEntry(state)) return parseBlockSeq(state, column, true);
-
+  if (valueCode === CHAR_STAR) return parseAlias(state);
+  if (isSequenceEntry(state)) return parseBlockSequence(state, column, true);
   if (hasMappingIndicatorInLine(state))
     return parseBlockMap(state, column, true);
 
@@ -364,31 +370,29 @@ const parseValueContent = (
   lineStart: number,
   lineIndent: number
 ): unknown => {
-  const valueCharCode = state.src.charCodeAt(state.pos);
+  const valueCode = state.src.charCodeAt(state.pos);
 
-  if (valueCharCode === CHAR_SQUOTE || valueCharCode === CHAR_DQUOTE) {
-    if (isQuotedMapKey(state, valueCharCode)) {
+  if (valueCode === CHAR_SINGLE_QUOTE || valueCode === CHAR_DOUBLE_QUOTE) {
+    if (isQuotedMapKey(state, valueCode)) {
       state.pos = lineStart;
       return parseBlockMap(state, lineIndent);
     }
 
-    return valueCharCode === CHAR_SQUOTE
+    return valueCode === CHAR_SINGLE_QUOTE
       ? parseSingleQuoted(state)
       : parseDoubleQuoted(state);
   }
 
-  if (valueCharCode === CHAR_LBRACKET) return parseFlowSeq(state, ownerIndent);
-
-  if (valueCharCode === CHAR_LBRACE) return parseFlowMap(state, ownerIndent);
-
-  if (valueCharCode === CHAR_PIPE || valueCharCode === CHAR_GT)
+  if (valueCode === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, ownerIndent);
+  if (valueCode === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent);
+  if (valueCode === CHAR_PIPE || valueCode === CHAR_GREATER_THAN)
     return parseBlockScalar(state, ownerIndent);
-
-  if (valueCharCode === CHAR_STAR) return parseAlias(state);
+  if (valueCode === CHAR_STAR) return parseAlias(state);
 
   if (isSequenceEntry(state)) {
     state.pos = lineStart;
-    return parseBlockSeq(state, lineIndent);
+    return parseBlockSequence(state, lineIndent);
   }
 
   if (isExplicitKey(state) || hasMappingIndicatorInLine(state)) {

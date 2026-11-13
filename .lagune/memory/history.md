@@ -106,3 +106,10 @@
 - **Category:** Improper validation of specified type of input (CWE-1287)
 - **What it is:** The public parse function lets the caller name the type they expect and then asserts the parsed value into that type before returning it. Nothing is checked at run time. Whatever the document produced is handed back wearing the caller's chosen shape.
 - **Closed:** 2026-11-13
+
+### Prototype-chain gadget keys survive into the parsed result
+
+- **Classification:** Critical
+- **Category:** Prototype pollution (CWE-1321)
+- **What it is:** Every mapping key from the document is written onto a plain object literal through one shared guarded assignment helper. That helper singles out `__proto__` and defines it as an own property instead of letting the assignment walk the prototype chain, which is the correct technique and does stop pollution while parsing. Nothing else is treated specially: `constructor` and `prototype` are assigned with no guard at all, and the guarded `__proto__` key is left visible and enumerable on the object handed back to the caller.
+- **Closed:** 2026-11-13
