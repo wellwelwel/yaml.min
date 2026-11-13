@@ -21,29 +21,6 @@
 
 - **References:** [CWE-1289: Improper Validation of Unsafe Equivalence in Input](https://cwe.mitre.org/data/definitions/1289.html), [CWE-694: Use of Multiple Resources with Duplicate Identifier](https://cwe.mitre.org/data/definitions/694.html)
 
-### Alias expansion has no fan-out, depth, or size budget
-
-- **Category:** Uncontrolled recursive entity expansion, the "billion laughs" denial of service (CWE-776, CWE-400)
-- **CVSS:** CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:L/SA:H (7.8, High)
-- **Priority:** High
-- **Why this priority:** Reached by the same untrusted document with no privilege or interaction in front of it, and carrying the same wide blast radius across every dependent, which is what holds it high. It does not reach Critical because the parser itself stays inside its input-proportional budget, so the entire loss lands on the host that walks the result, and that host is assumed to walk it, since a caller that parses a document and then never serializes, validates, clones, or merges it is not a deployment this library is written for.
-- **Upholds:** III. Hostile input never exhausts the host
-- **Fix:** Count, while parsing, the size the result will have when walked, and refuse a document whose aliases inflate it past a fixed bound. Hold one node counter on the shared parser state: each key, scalar and collection the parser builds adds one, and each resolved alias adds the full size of the node its anchor labels. The anchor store records that size next to the value when the anchored node finishes, as the counter's value at the node's end minus its value at the node's start. Because an anchored node's size already includes what the aliases inside it added, chains of any depth and fan-out of any width are counted exactly, with one addition per alias and no walk.
-
-  Bound the nodes that aliases add to the larger of 100,000 and the document's length in characters, and reject past it with the parser's `SyntaxError`. Check at every alias, so the counter fails fast and never grows large enough to lose precision. A document without aliases is never affected, small documents keep ordinary anchor reuse, and the walked result stays proportional to the input as principle III requires. Detect's 288-byte sample adds about 43 million nodes (eight layers of nine) and is refused at the bound instead of at the consumer.
-
-  This is the walk **js-yaml** asks every caller to write, counting each element every time an alias repeats it, with 100,000 as its suggested limit (`nodeca-js-yaml/docs/safety.md:20-62`), moved inside the parser so no caller has to. **js-yaml** itself only offers a raw alias count that is off by default (`nodeca-js-yaml/src/parser/constructor.ts:440-443`). **yaml** enforces a weighted count by default, but its weight descends only into sequences and pairs, so nested anchored mappings pass (`eemeli-yaml/src/nodes/toJS.ts:42-72`). Counting every node kind exactly closes both gaps, and one size bound replaces separate caps on alias count, chain depth and anchor count, since aliases and anchors already grow only with the input and expanded size is the one thing that does not.
-
-  An alias may only name a finished node. An alias inside the node its own anchor labels has no final size and would make the result cyclic, which no walk or serializer survives, so reject it with the same error.
-
-  Key the anchor store by name in a `Map`, as **js-yaml** does (`nodeca-js-yaml/src/parser/constructor.ts:339-357`), so `*constructor` or `*__proto__` can only find an anchor the document declared, never an inherited value. Detect does not record how the store is keyed today, so this pins it either way.
-
-  Keep returning the anchored value by reference, as both references do (`nodeca-js-yaml/src/parser/constructor.ts:440-455`, `eemeli-yaml/src/nodes/toJS.ts:25-52`), since copying would turn the deferred amplification into an immediate one. State in the README that aliased values are shared, so editing one edits every place that refers to it, the contract **js-yaml** documents (`nodeca-js-yaml/docs/safety.md:20-25`).
-
-  Pin the sharing with an identity assertion, not deep equality, so a later change that copies alias values fails the suite. Add cases for detect's sample, a document exactly at the bound (accepted) and one node past it (rejected), the same attack built from nested anchored mappings, a self-referencing alias, and anchors named `constructor` and `__proto__`.
-
-- **References:** [CWE-776: Improper Restriction of Recursive Entity References in DTDs](https://cwe.mitre.org/data/definitions/776.html), [CWE-400: Uncontrolled Resource Consumption](https://cwe.mitre.org/data/definitions/400.html), [OWASP XML External Entity Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/XML_External_Entity_Prevention_Cheat_Sheet.html)
-
 ### Numeric scalars are coerced with no precision or range check
 
 - **Category:** Numeric truncation and precision loss (CWE-681)

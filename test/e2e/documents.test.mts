@@ -11,29 +11,41 @@ import { assertParsesTo, read } from '../__helpers__/index.mts';
 const require = createRequire(import.meta.url);
 const { parse, parseAll } = require('../../src/index.ts');
 
-describe('Document markers', () => {
-  it('doc start', () =>
-    assertParsesTo(read('documents--doc-start.yaml'), { a: 1 }));
+describe('Document markers frame a document', () => {
+  const framedDocuments = {
+    'a start marker': {
+      file: 'documents--doc-start.yaml',
+      expected: { a: 1 },
+    },
+    'a start and an end marker': {
+      file: 'documents--doc-start-end.yaml',
+      expected: { a: 1 },
+    },
+    'a directive and a start marker': {
+      file: 'documents--directive-doc-start.yaml',
+      expected: 'hello',
+    },
+  };
 
-  it('doc start and end', () =>
-    assertParsesTo(read('documents--doc-start-end.yaml'), { a: 1 }));
-
-  it('directive + doc start', () =>
-    assertParsesTo(read('documents--directive-doc-start.yaml'), 'hello'));
+  for (const [name, { file, expected }] of Object.entries(framedDocuments)) {
+    it(`reads a document framed by ${name}`, () =>
+      assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Documents without content', () => {
-  it('only doc-start marker', () =>
-    assertParsesTo(read('documents--doc-start-only.yaml'), null));
+describe('A document without content is null', () => {
+  const emptyDocuments = {
+    'only a start marker': 'documents--doc-start-only.yaml',
+    'a start marker and a line break':
+      'documents--doc-start-trailing-newline.yaml',
+    'a start and an end marker with nothing between':
+      'documents--doc-end-no-content.yaml',
+    'only whitespace': 'documents--trailing-whitespace.yaml',
+  };
 
-  it('only doc-start with trailing newline', () =>
-    assertParsesTo(read('documents--doc-start-trailing-newline.yaml'), null));
-
-  it('doc-end without content', () =>
-    assertParsesTo(read('documents--doc-end-no-content.yaml'), null));
-
-  it('trailing whitespace only', () =>
-    assertParsesTo(read('documents--trailing-whitespace.yaml'), null));
+  for (const [name, file] of Object.entries(emptyDocuments)) {
+    it(`reads ${name} as null`, () => assertParsesTo(read(file), null));
+  }
 });
 
 describe('An end marker line holds nothing but the marker and a comment', () => {

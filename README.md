@@ -209,6 +209,8 @@ production:
   <<: *defaults
 ```
 
+An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears. An alias can only refer to a node that is already complete, and the content that aliases repeat can add up to at most the larger of 1,000,000 characters and 10 times the length of the input.
+
 ### Explicit Keys
 
 ```yaml

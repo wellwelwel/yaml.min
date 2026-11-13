@@ -1,19 +1,6 @@
 {
   "entries": [
     {
-      "name": "Alias expansion has no fan-out, depth, or size budget",
-      "paths": [
-        "src/internal/anchors.ts",
-        "src/internal/block.ts",
-        "src/internal/flow.ts",
-        "src/internal/keys.ts",
-        "src/types.ts",
-        "src/index.ts",
-        "README.md",
-        "test/e2e/aliases.test.mts"
-      ]
-    },
-    {
       "name": "Mapping keys are coerced to strings, so distinct keys silently collide",
       "paths": [
         "src/internal/keys.ts",

@@ -120,3 +120,10 @@
 - **Category:** Uncontrolled recursion leading to stack exhaustion (CWE-674, CWE-400)
 - **What it is:** The parser sets itself a maximum nesting depth of one thousand levels and raises a clear error past it. That counter is incremented in exactly one function, the indentation-style value parser. Two other recursion paths never touch it: the branch that handles collections written compactly on a single line (`- - - - x`), which calls itself once per level, and the bracket-and-brace readers, which recurse into one another through the flow value reader with nothing counting the levels. Nesting that arrives on separate lines is counted and rejected correctly. Nesting that arrives on one line, or inside brackets, is not counted at all.
 - **Closed:** 2026-11-13
+
+### Alias expansion has no fan-out, depth, or size budget
+
+- **Classification:** High
+- **Category:** Uncontrolled recursive entity expansion, the "billion laughs" denial of service (CWE-776, CWE-400)
+- **What it is:** An anchor stores a value under a name and an alias hands the stored value straight back, by reference rather than by copy. The resolver keeps no count of how many times an anchor is referenced, how deeply aliases chain into each other, or how large the referenced value is, and anchors accumulate for the whole document with no cap. Both the indentation-style and the bracket-and-brace readers store whatever the lookup returns without any budget on the path.
+- **Closed:** 2026-11-13

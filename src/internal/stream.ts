@@ -50,7 +50,7 @@ export const createParserState = (input: string): ParserState => {
     len: src.length,
     pos: 0,
     depth: 0,
-    anchors: new Map(),
+    anchors: { nodes: new Map(), expansion: 0 },
   };
 
   rejectNonPrintable(state);
@@ -107,7 +107,7 @@ export const skipToDocument = (state: ParserState): boolean => {
 };
 
 export const readDocument = (state: ParserState): unknown => {
-  state.anchors.clear();
+  state.anchors.nodes.clear();
 
   if (isDocumentStart(state, state.pos)) skipMarkerLine(state);
 

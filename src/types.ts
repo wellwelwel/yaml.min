@@ -3,7 +3,16 @@ export type ParserState = {
   len: number;
   pos: number;
   depth: number;
-  anchors: Map<string, unknown>;
+  anchors: {
+    nodes: Map<string, { value: unknown; size: number } | null>;
+    expansion: number;
+  };
+};
+
+export type AnchorDeclaration = {
+  name: string;
+  contentStart: number;
+  expansionAtStart: number;
 };
 
 export type FlowCollection = {
