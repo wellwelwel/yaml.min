@@ -1,16 +1,6 @@
 {
   "entries": [
     {
-      "name": "The nesting depth limit does not cover every recursion path",
-      "paths": [
-        "src/internal/block.ts",
-        "src/internal/flow.ts",
-        "src/types.ts",
-        "src/index.ts",
-        "test/e2e/nested.test.mts"
-      ]
-    },
-    {
       "name": "Alias expansion has no fan-out, depth, or size budget",
       "paths": [
         "src/internal/anchors.ts",
@@ -43,7 +33,9 @@
     },
     {
       "name": "Numeric scalars are coerced with no precision or range check",
-      "paths": ["src/internal/scalars.ts"]
+      "paths": [
+        "src/internal/scalars.ts"
+      ]
     },
     {
       "name": "Explicit type tags are discarded, so values keep the type the parser guesses",

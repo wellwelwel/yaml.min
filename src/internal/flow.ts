@@ -17,6 +17,7 @@ import {
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
+import { enterCollection, leaveCollection } from './depth.js';
 import { syntaxError } from './errors.js';
 import { setMapKey } from './keys.js';
 import {
@@ -208,6 +209,8 @@ const completeImplicitPair = (
 
   if (!isImplicitPairColon(state)) return key;
 
+  enterCollection(state);
+
   const pair: Record<string, unknown> = {};
 
   state.pos++;
@@ -219,6 +222,7 @@ const completeImplicitPair = (
     keyStart,
     parseFlowValue(state, ownerIndent)
   );
+  leaveCollection(state);
 
   return pair;
 };
@@ -271,14 +275,11 @@ const parseFlowMapValue = (
   state.pos++;
   skipFlowSeparation(state, ownerIndent);
 
+  if (state.pos >= state.len) return null;
+
   const code = state.src.charCodeAt(state.pos);
 
-  if (
-    state.pos >= state.len ||
-    code === CHAR_COMMA ||
-    code === CHAR_RIGHT_BRACE
-  )
-    return null;
+  if (code === CHAR_COMMA || code === CHAR_RIGHT_BRACE) return null;
 
   const valueAnchor = readAnchorOrTag(state);
 
@@ -289,6 +290,8 @@ export const parseFlowSequence = (
   state: ParserState,
   ownerIndent: number
 ): unknown[] => {
+  enterCollection(state);
+
   const openedAt = state.pos;
   const result: unknown[] = [];
 
@@ -302,6 +305,8 @@ export const parseFlowSequence = (
     if (!closeFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) break;
   }
 
+  leaveCollection(state);
+
   return result;
 };
 
@@ -309,6 +314,8 @@ export const parseFlowMap = (
   state: ParserState,
   ownerIndent: number
 ): Record<string, unknown> => {
+  enterCollection(state);
+
   const openedAt = state.pos;
   const result: Record<string, unknown> = {};
 
@@ -336,6 +343,8 @@ export const parseFlowMap = (
 
     if (!closeFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) break;
   }
+
+  leaveCollection(state);
 
   return result;
 };

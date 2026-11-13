@@ -113,3 +113,10 @@
 - **Category:** Prototype pollution (CWE-1321)
 - **What it is:** Every mapping key from the document is written onto a plain object literal through one shared guarded assignment helper. That helper singles out `__proto__` and defines it as an own property instead of letting the assignment walk the prototype chain, which is the correct technique and does stop pollution while parsing. Nothing else is treated specially: `constructor` and `prototype` are assigned with no guard at all, and the guarded `__proto__` key is left visible and enumerable on the object handed back to the caller.
 - **Closed:** 2026-11-13
+
+### The nesting depth limit does not cover every recursion path
+
+- **Classification:** High
+- **Category:** Uncontrolled recursion leading to stack exhaustion (CWE-674, CWE-400)
+- **What it is:** The parser sets itself a maximum nesting depth of one thousand levels and raises a clear error past it. That counter is incremented in exactly one function, the indentation-style value parser. Two other recursion paths never touch it: the branch that handles collections written compactly on a single line (`- - - - x`), which calls itself once per level, and the bracket-and-brace readers, which recurse into one another through the flow value reader with nothing counting the levels. Nesting that arrives on separate lines is counted and rejected correctly. Nesting that arrives on one line, or inside brackets, is not counted at all.
+- **Closed:** 2026-11-13

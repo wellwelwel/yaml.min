@@ -5,25 +5,6 @@
 
 ## Fixes
 
-### The nesting depth limit does not cover every recursion path
-
-- **Category:** Uncontrolled recursion leading to stack exhaustion (CWE-674, CWE-400)
-- **CVSS:** CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:N/SI:N/SA:L (8.7, High)
-- **Priority:** High
-- **Why this priority:** The same unprivileged, document-borne reach as everything else on this parser surface, and the same wide blast radius across every dependent, so both the exposure and the stakes sit at the top. It settles below Critical because a stack overflow arrives as a throwable a caller can catch and survive, so the loss on the embedding application is an interruption rather than a takeover.
-- **Upholds:** III. Hostile input never exhausts the host
-- **Fix:** Move depth accounting onto the shared parser state as the one counter every nesting construct answers to, checked and incremented on entry and decremented on exit of each path that can nest: the block value parser that does it today, the compact same-line collection branch, the flow sequence reader, the flow mapping reader and the flow value reader. This is **js-yaml**'s model, one counter checked each time any node is entered, block or flow alike, added specifically to replace the engine's stack-overflow error (`nodeca-js-yaml/src/parser/parser.ts:1169-1181`, `nodeca-js-yaml/CHANGELOG.md:216-243`).
-
-  Keep the ceiling at its current 1,000 levels, counted across any mix of block, compact and flow nesting. Detect measured the shallowest engine overflow at about 3,300 bracket levels on **Node.js** 26's default stack, so the parser's own error fires with under a third of that budget spent.
-
-  Raise the depth error as the parser's `SyntaxError`, not the `RangeError` it uses today, so over-nested input is rejected as a bad document instead of sharing a class with the engine's stack overflow.
-
-  Add **yaml**'s backstop at the public entry point for hosts that call the parser with less stack left than the default: a `RangeError` that escapes the parse is rethrown as the parser's `SyntaxError`, carrying the original as its `cause` (`eemeli-yaml/src/compose/compose-node.ts:64-75`). The counter is the control and the backstop guarantees the contract: whatever the host's stack, the caller only ever receives the error the library declares.
-
-  Widen the maximum-nesting-depth test so each path, and one document mixing all three, parses at exactly the ceiling and fails one level past it with `SyntaxError`. Add **js-yaml**'s pathological cases, 100,000 opening brackets and 100,000 nested flow mappings, plus 100,000 compact dashes, each expecting `SyntaxError` (`nodeca-js-yaml/test/core/pathological.test.mjs:31-42`). Pin the backstop by calling the parser from deep inside a recursive helper, with too little stack left for the ceiling, and asserting `SyntaxError`.
-
-- **References:** [CWE-674: Uncontrolled Recursion](https://cwe.mitre.org/data/definitions/674.html), [CWE-400: Uncontrolled Resource Consumption](https://cwe.mitre.org/data/definitions/400.html)
-
 ### Mapping keys are coerced to strings, so distinct keys silently collide
 
 - **Category:** Duplicate key collision through unsafe input equivalence (CWE-1289)

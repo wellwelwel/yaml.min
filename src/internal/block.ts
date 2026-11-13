@@ -17,7 +17,8 @@ import {
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
-import { rangeError, syntaxError } from './errors.js';
+import { enterCollection, leaveCollection } from './depth.js';
+import { syntaxError } from './errors.js';
 import { parseFlowMap, parseFlowSequence } from './flow.js';
 import { setMapKey, stringifyKey } from './keys.js';
 import {
@@ -38,8 +39,6 @@ import {
   parsePlainScalar,
   parseSingleQuoted,
 } from './strings.js';
-
-const MAX_DEPTH = 1000;
 
 const isIndicatorAt = (state: ParserState, indicatorCode: number): boolean => {
   if (state.src.charCodeAt(state.pos) !== indicatorCode) return false;
@@ -183,6 +182,8 @@ const parseBlockSequence = (
   indent: number,
   isInline = false
 ): unknown[] => {
+  enterCollection(state);
+
   const result: unknown[] = [];
 
   if (isInline) result.push(parseSequenceEntry(state, indent));
@@ -195,6 +196,8 @@ const parseBlockSequence = (
 
     result.push(parseSequenceEntry(state, indent));
   }
+
+  leaveCollection(state);
 
   return result;
 };
@@ -313,6 +316,8 @@ const parseBlockMap = (
   indent: number,
   isInline = false
 ): Record<string, unknown> => {
+  enterCollection(state);
+
   const result: Record<string, unknown> = {};
 
   if (isInline) parseMapEntry(state, result, indent);
@@ -331,6 +336,8 @@ const parseBlockMap = (
 
     parseMapEntry(state, result, indent);
   }
+
+  leaveCollection(state);
 
   return result;
 };
@@ -408,21 +415,12 @@ export const parseValue = (
   ownerIndent: number,
   lineIndent: number
 ): unknown => {
-  if (++state.depth > MAX_DEPTH)
-    throw rangeError(
-      state,
-      `The input nests collections more than ${MAX_DEPTH} levels deep: expected at most ${MAX_DEPTH} levels of nesting`
-    );
-
   const lineStart = state.pos - lineIndent;
   const anchor = readAnchorOrTag(state);
-  const value = withAnchor(
+
+  return withAnchor(
     state,
     anchor,
     parseValueContent(state, ownerIndent, lineStart, lineIndent)
   );
-
-  state.depth--;
-
-  return value;
 };

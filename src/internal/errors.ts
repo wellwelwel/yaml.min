@@ -1,12 +1,12 @@
 import type { ParserState } from '../types.js';
 import { CHAR_LINE_FEED } from './chars.js';
 
-const describePosition = (src: string, position: number): string => {
+const describePosition = (source: string, position: number): string => {
   let line = 1;
   let lineStart = 0;
 
   for (let index = 0; index < position; index++) {
-    if (src.charCodeAt(index) !== CHAR_LINE_FEED) continue;
+    if (source.charCodeAt(index) !== CHAR_LINE_FEED) continue;
 
     line++;
     lineStart = index + 1;
@@ -28,5 +28,15 @@ export const syntaxError = (
   position: number = state.pos
 ): SyntaxError => new SyntaxError(locate(state, message, position));
 
-export const rangeError = (state: ParserState, message: string): RangeError =>
-  new RangeError(locate(state, message, state.pos));
+export const engineLimitError = (
+  state: ParserState,
+  cause: RangeError
+): SyntaxError =>
+  new SyntaxError(
+    locate(
+      state,
+      'The input exhausted an engine limit, such as the call stack: expected a smaller or less deeply nested document',
+      state.pos
+    ),
+    { cause }
+  );
