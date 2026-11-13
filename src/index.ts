@@ -8,12 +8,12 @@ import {
 /**
  * Parses a YAML v1.2 string that holds a single document.
  *
- * The result is `unknown` because nothing checks its shape: validate it before use.
- * It holds only plain objects, arrays, strings, numbers, booleans, and `null`, never `undefined`.
- * A mapping key named `__proto__`, `constructor`, or `prototype` stays an ordinary own key and never changes a prototype.
- * Test for a key with `Object.hasOwn()`, not `in`, and skip those three names when merging the result into another object.
- * Numbers are `Infinity`, `-Infinity`, or `NaN` only for YAML's `.inf`, `-.inf`, and `.nan` forms, and those values do not survive a JSON round trip.
- * A numeral too large for a number, such as `1e999`, stays a string.
+ * - The result is `unknown` because nothing checks its shape: validate it before use.
+ * - It holds only plain objects, arrays, strings, numbers, booleans, and `null`, never `undefined`.
+ * - A mapping key named `__proto__`, `constructor`, or `prototype` stays an ordinary own key and never changes a prototype.
+ * - Test for a key with `Object.hasOwn()`, not `in`, and skip those three names when merging the result into another object.
+ * - Numbers are `Infinity`, `-Infinity`, or `NaN` only for YAML's `.inf`, `-.inf`, and `.nan` forms, and those values do not survive a JSON round trip.
+ * - A numeral too large for a number, such as `1e999`, stays a string.
  *
  * @throws {TypeError} When `input` is not a string.
  * @throws {SyntaxError} When `input` is not valid YAML, or holds more than one document (use `parseAll` for a stream).
