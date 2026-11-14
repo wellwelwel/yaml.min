@@ -14,14 +14,15 @@ import {
 import { yamlError } from './errors.js';
 
 export const isBlankOrEnd = (state: ParserState, position: number): boolean =>
-  position >= state.len || isBlank(state.src.charCodeAt(position));
+  position >= state.sourceLength || isBlank(state.source.charCodeAt(position));
 
 export const isAtLineBreakOrEnd = (state: ParserState): boolean =>
-  state.pos >= state.len || isLineBreak(state.src.charCodeAt(state.pos));
+  state.position >= state.sourceLength ||
+  isLineBreak(state.source.charCodeAt(state.position));
 
 export const lineBreakWidth = (state: ParserState, position: number): number =>
-  state.src.charCodeAt(position) === CHAR_CARRIAGE_RETURN &&
-  state.src.charCodeAt(position + 1) === CHAR_LINE_FEED
+  state.source.charCodeAt(position) === CHAR_CARRIAGE_RETURN &&
+  state.source.charCodeAt(position + 1) === CHAR_LINE_FEED
     ? 2
     : 1;
 
@@ -31,22 +32,22 @@ export const countIndentSpaces = (
 ): number => {
   let cursor = lineStart;
 
-  while (state.src.charCodeAt(cursor) === CHAR_SPACE) cursor++;
+  while (state.source.charCodeAt(cursor) === CHAR_SPACE) cursor++;
 
   return cursor - lineStart;
 };
 
 export const isLineStart = (state: ParserState, position: number): boolean =>
-  position === 0 || isLineBreak(state.src.charCodeAt(position - 1));
+  position === 0 || isLineBreak(state.source.charCodeAt(position - 1));
 
 const isMarkerOf = (
   state: ParserState,
   position: number,
   markerCode: number
 ): boolean =>
-  state.src.charCodeAt(position) === markerCode &&
-  state.src.charCodeAt(position + 1) === markerCode &&
-  state.src.charCodeAt(position + 2) === markerCode &&
+  state.source.charCodeAt(position) === markerCode &&
+  state.source.charCodeAt(position + 1) === markerCode &&
+  state.source.charCodeAt(position + 2) === markerCode &&
   isBlankOrEnd(state, position + 3) &&
   isLineStart(state, position);
 
@@ -65,17 +66,21 @@ export const isDocumentMarker = (
   isDocumentStart(state, position) || isDocumentEnd(state, position);
 
 export const skipSpaces = (state: ParserState): void => {
-  while (isSpaceOrTab(state.src.charCodeAt(state.pos))) state.pos++;
+  while (isSpaceOrTab(state.source.charCodeAt(state.position)))
+    state.position++;
 };
 
 export const skipToLineEnd = (state: ParserState): void => {
-  while (!isAtLineBreakOrEnd(state)) state.pos++;
+  while (!isAtLineBreakOrEnd(state)) state.position++;
 };
 
 export const skipComment = (state: ParserState): void => {
-  if (state.src.charCodeAt(state.pos) !== CHAR_HASH) return;
+  if (state.source.charCodeAt(state.position) !== CHAR_HASH) return;
 
-  if (state.pos > 0 && !isBlank(state.src.charCodeAt(state.pos - 1)))
+  if (
+    state.position > 0 &&
+    !isBlank(state.source.charCodeAt(state.position - 1))
+  )
     throw yamlError(
       state,
       'UNEXPECTED_CHARACTER',
@@ -86,8 +91,8 @@ export const skipComment = (state: ParserState): void => {
 };
 
 export const skipBlanksAndComments = (state: ParserState): void => {
-  while (state.pos < state.len) {
-    const code = state.src.charCodeAt(state.pos);
+  while (state.position < state.sourceLength) {
+    const code = state.source.charCodeAt(state.position);
 
     if (code === CHAR_HASH) {
       skipComment(state);
@@ -96,43 +101,43 @@ export const skipBlanksAndComments = (state: ParserState): void => {
 
     if (!isBlank(code)) return;
 
-    state.pos++;
+    state.position++;
   }
 };
 
 const skipTabbedBlankLine = (state: ParserState): boolean => {
-  let cursor = state.pos;
+  let cursor = state.position;
 
-  while (isSpaceOrTab(state.src.charCodeAt(cursor))) cursor++;
+  while (isSpaceOrTab(state.source.charCodeAt(cursor))) cursor++;
 
-  if (cursor < state.len) {
-    const code = state.src.charCodeAt(cursor);
+  if (cursor < state.sourceLength) {
+    const code = state.source.charCodeAt(cursor);
 
     if (code !== CHAR_HASH && !isLineBreak(code)) return false;
   }
 
-  state.pos = cursor;
+  state.position = cursor;
   skipComment(state);
 
   return true;
 };
 
 export const skipNewlinesAndComments = (state: ParserState): number => {
-  while (state.pos < state.len) {
-    const code = state.src.charCodeAt(state.pos);
+  while (state.position < state.sourceLength) {
+    const code = state.source.charCodeAt(state.position);
 
     if (isLineBreak(code)) {
-      state.pos++;
+      state.position++;
       continue;
     }
 
-    const lineStart = state.pos;
+    const lineStart = state.position;
 
-    state.pos += countIndentSpaces(state, lineStart);
+    state.position += countIndentSpaces(state, lineStart);
 
-    if (state.pos >= state.len) return 0;
+    if (state.position >= state.sourceLength) return 0;
 
-    const contentCode = state.src.charCodeAt(state.pos);
+    const contentCode = state.source.charCodeAt(state.position);
 
     if (isLineBreak(contentCode)) continue;
 
@@ -143,7 +148,7 @@ export const skipNewlinesAndComments = (state: ParserState): number => {
 
     if (contentCode === CHAR_TAB && skipTabbedBlankLine(state)) continue;
 
-    return state.pos - lineStart;
+    return state.position - lineStart;
   }
 
   return 0;

@@ -49,9 +49,9 @@ type AnchoredNode = {
 };
 
 export type ParserState = {
-  src: string;
-  len: number;
-  pos: number;
+  source: string;
+  sourceLength: number;
+  position: number;
   depth: number;
   maxDepth: number;
   bigint: boolean;

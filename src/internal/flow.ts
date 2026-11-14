@@ -34,13 +34,9 @@ import {
   skipComment,
   skipSpaces,
 } from './navigation.js';
+import { parsePlainScalar, unindentedFlowLineError } from './plain-scalars.js';
 import { mergeNodeProperties, readNodeProperties } from './properties.js';
-import {
-  parseDoubleQuoted,
-  parsePlainScalar,
-  parseSingleQuoted,
-  unindentedFlowLineError,
-} from './strings.js';
+import { parseDoubleQuoted, parseSingleQuoted } from './quoted-scalars.js';
 import {
   checkCollectionTag,
   resolveEmptyNode,
@@ -65,15 +61,15 @@ const FLOW_MAPPING: FlowCollection = {
 };
 
 const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
-  const lineStart = state.pos;
+  const lineStart = state.position;
   const indent = countIndentSpaces(state, lineStart);
   let cursor = lineStart + indent;
 
-  while (isSpaceOrTab(state.src.charCodeAt(cursor))) cursor++;
+  while (isSpaceOrTab(state.source.charCodeAt(cursor))) cursor++;
 
-  if (cursor >= state.len) return;
+  if (cursor >= state.sourceLength) return;
 
-  const code = state.src.charCodeAt(cursor);
+  const code = state.source.charCodeAt(cursor);
 
   if (
     isLineBreak(code) ||
@@ -96,11 +92,11 @@ const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
 };
 
 const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
-  while (state.pos < state.len) {
-    const code = state.src.charCodeAt(state.pos);
+  while (state.position < state.sourceLength) {
+    const code = state.source.charCodeAt(state.position);
 
     if (isSpaceOrTab(code)) {
-      state.pos++;
+      state.position++;
       continue;
     }
 
@@ -111,13 +107,13 @@ const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
 
     if (!isLineBreak(code)) return;
 
-    state.pos++;
+    state.position++;
     checkFlowLine(state, ownerIndent);
   }
 };
 
 const skipFlowIndicator = (state: ParserState, ownerIndent: number): void => {
-  state.pos++;
+  state.position++;
   skipFlowSeparation(state, ownerIndent);
 };
 
@@ -138,7 +134,8 @@ const readFlowNodeProperties = (
 };
 
 const isFlowTerminator = (state: ParserState): boolean =>
-  state.pos >= state.len || isFlowEntryEnd(state.src.charCodeAt(state.pos));
+  state.position >= state.sourceLength ||
+  isFlowEntryEnd(state.source.charCodeAt(state.position));
 
 const unclosedCollectionError = (
   state: ParserState,
@@ -160,7 +157,7 @@ const unexpectedCharacterError = (
   yamlError(
     state,
     'UNEXPECTED_CHARACTER',
-    `Unexpected ${quote(characterAt(state, state.pos))} in a ${collection.name}: expected ${expected}`
+    `Unexpected ${quote(characterAt(state, state.position))} in a ${collection.name}: expected ${expected}`
   );
 
 const skipToFlowBoundary = (
@@ -171,10 +168,10 @@ const skipToFlowBoundary = (
 ): number => {
   skipFlowSeparation(state, ownerIndent);
 
-  if (state.pos >= state.len)
+  if (state.position >= state.sourceLength)
     throw unclosedCollectionError(state, collection, openedAt);
 
-  return state.src.charCodeAt(state.pos);
+  return state.source.charCodeAt(state.position);
 };
 
 const openFlowEntry = (
@@ -186,7 +183,7 @@ const openFlowEntry = (
   const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
   if (code === collection.closeCode) {
-    state.pos++;
+    state.position++;
     return false;
   }
 
@@ -215,16 +212,16 @@ const closeFlowEntry = (
       `"," or "${collection.close}"`
     );
 
-  state.pos++;
+  state.position++;
 
   return code === CHAR_COMMA;
 };
 
 const isImplicitPairColon = (state: ParserState): boolean => {
-  if (state.src.charCodeAt(state.pos) !== CHAR_COLON) return false;
-  if (state.pos + 1 >= state.len) return true;
+  if (state.source.charCodeAt(state.position) !== CHAR_COLON) return false;
+  if (state.position + 1 >= state.sourceLength) return true;
 
-  const afterColon = state.src.charCodeAt(state.pos + 1);
+  const afterColon = state.source.charCodeAt(state.position + 1);
 
   return (
     afterColon === CHAR_SPACE ||
@@ -267,7 +264,7 @@ const parseFlowNode = (
   ownerIndent: number,
   tag: NodeTag | undefined
 ): unknown => {
-  const code = state.src.charCodeAt(state.pos);
+  const code = state.source.charCodeAt(state.position);
 
   if (code === CHAR_SINGLE_QUOTE)
     return resolveTextScalar(state, tag, parseSingleQuoted(state, ownerIndent));
@@ -291,10 +288,11 @@ const readFlowNode = (
   ownerIndent: number,
   allowsImplicitPair: boolean
 ): unknown => {
-  const nodeStart = state.pos;
+  const nodeStart = state.position;
   const properties = readFlowNodeProperties(state, ownerIndent);
   const canBeImplicitKey =
-    allowsImplicitPair && !isContentIndicator(state.src.charCodeAt(state.pos));
+    allowsImplicitPair &&
+    !isContentIndicator(state.source.charCodeAt(state.position));
   const node = withAnchor(
     state,
     properties?.anchor,
@@ -313,8 +311,8 @@ const parseFlowValue = (state: ParserState, ownerIndent: number): unknown => {
 };
 
 const isExplicitKeyIndicator = (state: ParserState): boolean =>
-  state.src.charCodeAt(state.pos) === CHAR_QUESTION &&
-  isBlank(state.src.charCodeAt(state.pos + 1));
+  state.source.charCodeAt(state.position) === CHAR_QUESTION &&
+  isBlank(state.source.charCodeAt(state.position + 1));
 
 const skipExplicitKeyIndicator = (
   state: ParserState,
@@ -327,7 +325,7 @@ const parseFlowMapValue = (
   state: ParserState,
   ownerIndent: number
 ): unknown => {
-  if (state.src.charCodeAt(state.pos) !== CHAR_COLON) return null;
+  if (state.source.charCodeAt(state.position) !== CHAR_COLON) return null;
 
   skipFlowIndicator(state, ownerIndent);
 
@@ -341,7 +339,7 @@ const readFlowPair = (
 ): void => {
   skipExplicitKeyIndicator(state, ownerIndent);
 
-  const keyStart = state.pos;
+  const keyStart = state.position;
   const properties = readFlowNodeProperties(state, ownerIndent);
   const isQuotedStr = isQuotedStrKey(state, properties?.tag);
   const key = withAnchor(
@@ -391,10 +389,10 @@ export const parseFlowSequence = (
   enterCollection(state);
   checkCollectionTag(state, tag, 'seq');
 
-  const openedAt = state.pos;
+  const openedAt = state.position;
   const result: unknown[] = [];
 
-  state.pos++;
+  state.position++;
 
   while (openFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) {
     result.push(parseFlowSequenceEntry(state, ownerIndent));
@@ -415,10 +413,10 @@ export const parseFlowMap = (
   enterCollection(state);
   checkCollectionTag(state, tag, 'map');
 
-  const openedAt = state.pos;
+  const openedAt = state.position;
   const result: Record<string, unknown> = {};
 
-  state.pos++;
+  state.position++;
 
   while (openFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) {
     readFlowPair(state, result, ownerIndent);

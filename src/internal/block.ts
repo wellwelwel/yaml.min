@@ -1,5 +1,6 @@
 import type { NodeProperties, NodeTag, ParserState } from '../types.js';
 import { parseAlias, withAnchor } from './anchors.js';
+import { parseBlockScalar } from './block-scalars.js';
 import {
   CHAR_BACKSLASH,
   CHAR_COLON,
@@ -37,15 +38,13 @@ import {
   skipNewlinesAndComments,
   skipSpaces,
 } from './navigation.js';
-import { mergeNodeProperties, readNodeProperties } from './properties.js';
 import {
   findPlainLineEnd,
-  parseBlockScalar,
-  parseDoubleQuoted,
   parsePlainKey,
   parsePlainScalar,
-  parseSingleQuoted,
-} from './strings.js';
+} from './plain-scalars.js';
+import { mergeNodeProperties, readNodeProperties } from './properties.js';
+import { parseDoubleQuoted, parseSingleQuoted } from './quoted-scalars.js';
 import {
   checkCollectionTag,
   resolveEmptyNode,
@@ -54,8 +53,8 @@ import {
 } from './tags.js';
 
 const isIndicatorAt = (state: ParserState, indicatorCode: number): boolean =>
-  state.src.charCodeAt(state.pos) === indicatorCode &&
-  isBlankOrEnd(state, state.pos + 1);
+  state.source.charCodeAt(state.position) === indicatorCode &&
+  isBlankOrEnd(state, state.position + 1);
 
 const isSequenceEntry = (state: ParserState): boolean =>
   isIndicatorAt(state, CHAR_MINUS);
@@ -68,46 +67,49 @@ const isMappingValue = (state: ParserState): boolean =>
 
 const opensBlockCollection = (state: ParserState, code: number): boolean =>
   (code === CHAR_MINUS || code === CHAR_QUESTION) &&
-  isBlankOrEnd(state, state.pos + 1);
+  isBlankOrEnd(state, state.position + 1);
 
 const skipIndicator = (state: ParserState): void => {
-  state.pos++;
+  state.position++;
 
-  if (state.src.charCodeAt(state.pos) === CHAR_SPACE) state.pos++;
+  if (state.source.charCodeAt(state.position) === CHAR_SPACE) state.position++;
 };
 
 const isQuotedMapKey = (state: ParserState, quoteCharCode: number): boolean => {
-  let lookAhead = state.pos + 1;
+  let lookAhead = state.position + 1;
 
   while (
-    lookAhead < state.len &&
-    state.src.charCodeAt(lookAhead) !== quoteCharCode
+    lookAhead < state.sourceLength &&
+    state.source.charCodeAt(lookAhead) !== quoteCharCode
   ) {
     if (
       quoteCharCode === CHAR_DOUBLE_QUOTE &&
-      state.src.charCodeAt(lookAhead) === CHAR_BACKSLASH
+      state.source.charCodeAt(lookAhead) === CHAR_BACKSLASH
     )
       lookAhead++;
 
     lookAhead++;
   }
 
-  if (lookAhead < state.len) lookAhead++;
+  if (lookAhead < state.sourceLength) lookAhead++;
 
-  while (isSpaceOrTab(state.src.charCodeAt(lookAhead))) lookAhead++;
+  while (isSpaceOrTab(state.source.charCodeAt(lookAhead))) lookAhead++;
 
-  if (lookAhead >= state.len || state.src.charCodeAt(lookAhead) !== CHAR_COLON)
+  if (
+    lookAhead >= state.sourceLength ||
+    state.source.charCodeAt(lookAhead) !== CHAR_COLON
+  )
     return false;
 
   return isBlankOrEnd(state, lookAhead + 1);
 };
 
 const hasMappingIndicatorInLine = (state: ParserState): boolean =>
-  state.src.charCodeAt(findPlainLineEnd(state, state.pos, false)) ===
+  state.source.charCodeAt(findPlainLineEnd(state, state.position, false)) ===
   CHAR_COLON;
 
 const opensImplicitKey = (state: ParserState): boolean => {
-  const code = state.src.charCodeAt(state.pos);
+  const code = state.source.charCodeAt(state.position);
 
   if (isQuote(code)) return isQuotedMapKey(state, code);
 
@@ -115,7 +117,7 @@ const opensImplicitKey = (state: ParserState): boolean => {
 };
 
 const finishLine = (state: ParserState): void => {
-  if (isAtLineBreakOrEnd(state) || isLineStart(state, state.pos)) return;
+  if (isAtLineBreakOrEnd(state) || isLineStart(state, state.position)) return;
 
   skipSpaces(state);
   skipComment(state);
@@ -131,10 +133,10 @@ const finishLine = (state: ParserState): void => {
 const enterBlockLine = (state: ParserState, indent: number): boolean => {
   const lineIndent = skipNewlinesAndComments(state);
 
-  if (state.pos >= state.len) return false;
+  if (state.position >= state.sourceLength) return false;
 
-  if (lineIndent < indent || isDocumentMarker(state, state.pos)) {
-    state.pos -= lineIndent;
+  if (lineIndent < indent || isDocumentMarker(state, state.position)) {
+    state.position -= lineIndent;
     return false;
   }
 
@@ -145,7 +147,7 @@ const enterBlockLine = (state: ParserState, indent: number): boolean => {
       `A line is indented by ${lineIndent} spaces, which matches no open block collection: expected ${indent} spaces to continue the collection, or fewer to close it`
     );
 
-  if (state.src.charCodeAt(state.pos) === CHAR_TAB)
+  if (state.source.charCodeAt(state.position) === CHAR_TAB)
     throw yamlError(
       state,
       'INVALID_INDENTATION',
@@ -163,7 +165,10 @@ const parseNextLineValue = (
 ): unknown => {
   const nextIndent = skipNewlinesAndComments(state);
 
-  if (state.pos >= state.len || isDocumentMarker(state, state.pos))
+  if (
+    state.position >= state.sourceLength ||
+    isDocumentMarker(state, state.position)
+  )
     return resolveEmptyNode(state, properties?.tag);
 
   if (nextIndent > ownerIndent)
@@ -180,7 +185,7 @@ const parseNextLineValue = (
     nextIndent === ownerIndent &&
     isSequenceEntry(state);
 
-  state.pos -= nextIndent;
+  state.position -= nextIndent;
 
   return opensIndentlessSequence
     ? parseBlockSequence(state, ownerIndent, false, properties?.tag)
@@ -192,12 +197,12 @@ const parseIndicatedNode = (
   indent: number,
   allowsIndentlessSequence: boolean
 ): unknown => {
-  const indicatorStart = state.pos;
+  const indicatorStart = state.position;
 
-  state.pos++;
+  state.position++;
   skipSpaces(state);
 
-  const contentStart = state.pos;
+  const contentStart = state.position;
   const properties = readNodeProperties(state, false);
 
   skipComment(state);
@@ -237,7 +242,7 @@ const parseBlockSequence = (
 
   while (enterBlockLine(state, indent)) {
     if (!isSequenceEntry(state)) {
-      state.pos -= indent;
+      state.position -= indent;
       break;
     }
 
@@ -254,7 +259,7 @@ const parseScalarOrFlowNode = (
   ownerIndent: number,
   tag: NodeTag | undefined
 ): unknown => {
-  const code = state.src.charCodeAt(state.pos);
+  const code = state.source.charCodeAt(state.position);
 
   if (code === CHAR_SINGLE_QUOTE)
     return resolveTextScalar(state, tag, parseSingleQuoted(state, ownerIndent));
@@ -293,7 +298,7 @@ const parseMapKey = (
   indent: number,
   tag: NodeTag | undefined
 ): unknown => {
-  const keyCode = state.src.charCodeAt(state.pos);
+  const keyCode = state.source.charCodeAt(state.position);
 
   if (keyCode === CHAR_SINGLE_QUOTE)
     return resolveTextScalar(state, tag, parseSingleQuoted(state, indent));
@@ -304,7 +309,7 @@ const parseMapKey = (
   if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent, tag);
   if (keyCode === CHAR_STAR) return parseAlias(state, tag);
   if (opensBlockCollection(state, keyCode))
-    throw collectionKeyError(state, state.pos);
+    throw collectionKeyError(state, state.position);
 
   return resolvePlainScalar(state, tag, parsePlainKey(state));
 };
@@ -314,7 +319,7 @@ const parseMapEntry = (
   result: Record<string, unknown>,
   indent: number
 ): void => {
-  const entryStart = state.pos;
+  const entryStart = state.position;
   const properties = readNodeProperties(state, false);
   const isQuotedStr = isQuotedStrKey(state, properties?.tag);
   const key = withAnchor(
@@ -325,7 +330,7 @@ const parseMapEntry = (
 
   skipSpaces(state);
 
-  if (state.src.charCodeAt(state.pos) !== CHAR_COLON)
+  if (state.source.charCodeAt(state.position) !== CHAR_COLON)
     throw yamlError(
       state,
       'EXPECTED_MAPPING_ENTRY',
@@ -353,7 +358,7 @@ const parseExplicitMapEntry = (
 ): void => {
   skipIndicator(state);
 
-  const keyStart = state.pos;
+  const keyStart = state.position;
   const properties = readNodeProperties(state, false);
   const isQuotedStr = isQuotedStrKey(state, properties?.tag);
   const key = withAnchor(
@@ -382,7 +387,7 @@ const parseExplicitMapEntry = (
     return;
   }
 
-  if (state.pos < state.len && nextIndent > indent)
+  if (state.position < state.sourceLength && nextIndent > indent)
     throw yamlError(
       state,
       'EXPECTED_MAPPING_ENTRY',
@@ -391,7 +396,7 @@ const parseExplicitMapEntry = (
 
   setMapKey(state, result, key, isQuotedStr, keyStart, null);
 
-  state.pos -= nextIndent;
+  state.position -= nextIndent;
 };
 
 const parseBlockMap = (
@@ -433,7 +438,7 @@ const parseCompactMap = (
   column: number,
   contentStart: number
 ): Record<string, unknown> => {
-  state.pos = contentStart;
+  state.position = contentStart;
 
   return parseBlockMap(state, column, true, undefined);
 };
@@ -520,7 +525,7 @@ const parseValueContent = (
   inheritedProperties: NodeProperties | undefined
 ): unknown => {
   if (isSequenceEntry(state)) {
-    state.pos = lineStart;
+    state.position = lineStart;
     return parseBlockSequence(
       state,
       lineIndent,
@@ -530,7 +535,7 @@ const parseValueContent = (
   }
 
   if (isExplicitKey(state) || opensImplicitKey(state)) {
-    state.pos = lineStart;
+    state.position = lineStart;
     return parseBlockMap(state, lineIndent, false, inheritedProperties?.tag);
   }
 
@@ -552,7 +557,7 @@ export const parseValue = (
   allowsIndentlessSequence: boolean,
   inheritedProperties: NodeProperties | undefined
 ): unknown => {
-  const lineStart = state.pos - lineIndent;
+  const lineStart = state.position - lineIndent;
   const ownProperties = readNodeProperties(state, false);
 
   skipComment(state);

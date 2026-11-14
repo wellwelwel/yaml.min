@@ -10,15 +10,15 @@ const isAnchorNameEnd = (code: number): boolean =>
   isBlank(code) || isFlowIndicator(code);
 
 export const readAnchorName = (state: ParserState): string => {
-  const start = state.pos;
+  const start = state.position;
 
   while (
-    state.pos < state.len &&
-    !isAnchorNameEnd(state.src.charCodeAt(state.pos))
+    state.position < state.sourceLength &&
+    !isAnchorNameEnd(state.source.charCodeAt(state.position))
   )
-    state.pos++;
+    state.position++;
 
-  return state.src.slice(start, state.pos);
+  return state.source.slice(start, state.position);
 };
 
 export const declareAnchor = (
@@ -28,7 +28,7 @@ export const declareAnchor = (
   const anchor: AnchorDeclaration = {
     name,
     depth: state.depth,
-    contentStart: state.pos,
+    contentStart: state.position,
     expansionAtStart: state.anchors.expansion,
   };
 
@@ -67,7 +67,7 @@ const deepFreeze = (value: unknown): void => {
 const aliasExpansionLimit = (state: ParserState): number =>
   Math.max(
     MIN_ALIAS_EXPANSION_LIMIT,
-    ALIAS_EXPANSION_PER_INPUT_CHARACTER * state.len
+    ALIAS_EXPANSION_PER_INPUT_CHARACTER * state.sourceLength
   );
 
 const aliasExpansionError = (
@@ -146,9 +146,9 @@ export const parseAlias = (
 
   if (pending?.depth === state.depth) throw aliasAnchorError(state, pending);
 
-  const aliasStart = state.pos;
+  const aliasStart = state.position;
 
-  state.pos++;
+  state.position++;
 
   const name = readAnchorName(state);
 
@@ -191,7 +191,7 @@ export const withAnchor = (
   state.anchors.nodes.set(anchor.name, {
     value,
     size:
-      state.pos -
+      state.position -
       anchor.contentStart +
       state.anchors.expansion -
       anchor.expansionAtStart,

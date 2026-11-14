@@ -51,32 +51,6 @@ export const NON_PRINTABLE = new RegExp(
   `[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x84\\x86-\\x9F\\uFFFE\\uFFFF]|${LONE_SURROGATE.source}`
 );
 
-const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
-  '0': '\x00',
-  a: '\x07',
-  b: '\b',
-  t: '\t',
-  '\t': '\t',
-  n: '\n',
-  v: '\v',
-  f: '\f',
-  r: '\r',
-  e: '\x1b',
-  ' ': ' ',
-  '"': '"',
-  '/': '/',
-  '\\': '\\',
-  N: '\u0085',
-  _: '\u00a0',
-  L: '\u2028',
-  P: '\u2029',
-};
-
-export const SIMPLE_ESCAPE_MAP: (string | undefined)[] = Array.from(
-  { length: 128 },
-  (_, code) => SIMPLE_ESCAPES[String.fromCharCode(code)]
-);
-
 const INDICATOR_CODES: ReadonlySet<number> = new Set(
   Array.from('-?:,[]{}#&*!|>\'"%@`', (indicator) => indicator.charCodeAt(0))
 );

@@ -85,7 +85,7 @@ const spansLines = (
   end: number
 ): boolean => {
   for (let cursor = start; cursor < end; cursor++)
-    if (isLineBreak(state.src.charCodeAt(cursor))) return true;
+    if (isLineBreak(state.source.charCodeAt(cursor))) return true;
 
   return false;
 };
@@ -94,7 +94,7 @@ export const checkImplicitKey = (
   state: ParserState,
   keyStart: number
 ): void => {
-  const colonOffset = state.pos - keyStart;
+  const colonOffset = state.position - keyStart;
 
   if (colonOffset > MAX_IMPLICIT_KEY_LENGTH)
     throw yamlError(
@@ -104,7 +104,7 @@ export const checkImplicitKey = (
       keyStart
     );
 
-  if (spansLines(state, keyStart, state.pos))
+  if (spansLines(state, keyStart, state.position))
     throw yamlError(
       state,
       'EXPECTED_MAPPING_ENTRY',
@@ -144,7 +144,8 @@ const definePrototypeKey = (
 export const isQuotedStrKey = (
   state: ParserState,
   tag: NodeTag | undefined
-): boolean => tag?.name === 'str' && isQuote(state.src.charCodeAt(state.pos));
+): boolean =>
+  tag?.name === 'str' && isQuote(state.source.charCodeAt(state.position));
 
 export const setMapKey = (
   state: ParserState,

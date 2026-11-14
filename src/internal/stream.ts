@@ -24,7 +24,7 @@ const YAML_DIRECTIVE = '%YAML';
 const YAML_VERSION = /^[0-9]+\.[0-9]+$/;
 
 const rejectNonPrintable = (state: ParserState): void => {
-  const match = NON_PRINTABLE.exec(state.src);
+  const match = NON_PRINTABLE.exec(state.source);
 
   if (match === null) return;
 
@@ -33,7 +33,7 @@ const rejectNonPrintable = (state: ParserState): void => {
   throw yamlError(
     state,
     'NON_PRINTABLE_CHARACTER',
-    `The input holds the non-printable character ${codePointLabel(state.src.charCodeAt(position))}: expected printable characters, tabs, and line breaks only`,
+    `The input holds the non-printable character ${codePointLabel(state.source.charCodeAt(position))}: expected printable characters, tabs, and line breaks only`,
     position
   );
 };
@@ -48,12 +48,12 @@ export const createParserState = (
     );
 
   const maxDepth = readMaxDepth(options);
-  const src =
+  const source =
     input.charCodeAt(0) === CHAR_BYTE_ORDER_MARK ? input.slice(1) : input;
   const state: ParserState = {
-    src,
-    len: src.length,
-    pos: 0,
+    source,
+    sourceLength: source.length,
+    position: 0,
     depth: 0,
     maxDepth,
     bigint: options?.bigint === true,
@@ -68,7 +68,7 @@ export const createParserState = (
 };
 
 const skipMarkerLine = (state: ParserState): void => {
-  state.pos += 3;
+  state.position += 3;
 
   skipSpaces(state);
   skipComment(state);
@@ -88,9 +88,13 @@ const skipDocumentEndLine = (state: ParserState): void => {
 const closeDocument = (state: ParserState): void => {
   skipBlanksAndComments(state);
 
-  if (state.pos >= state.len || isDocumentStart(state, state.pos)) return;
+  if (
+    state.position >= state.sourceLength ||
+    isDocumentStart(state, state.position)
+  )
+    return;
 
-  if (!isDocumentEnd(state, state.pos))
+  if (!isDocumentEnd(state, state.position))
     throw yamlError(
       state,
       'UNEXPECTED_CONTENT',
@@ -101,8 +105,8 @@ const closeDocument = (state: ParserState): void => {
 };
 
 const isYamlDirective = (state: ParserState): boolean =>
-  state.src.startsWith(YAML_DIRECTIVE, state.pos) &&
-  isBlankOrEnd(state, state.pos + YAML_DIRECTIVE.length);
+  state.source.startsWith(YAML_DIRECTIVE, state.position) &&
+  isBlankOrEnd(state, state.position + YAML_DIRECTIVE.length);
 
 const isWellFormedYamlDirective = (
   state: ParserState,
@@ -110,8 +114,6 @@ const isWellFormedYamlDirective = (
 ): boolean => isAtLineBreakOrEnd(state) && YAML_VERSION.test(version);
 
 const readYamlDirective = (state: ParserState, isRepeated: boolean): void => {
-  const directiveStart = state.pos;
-
   if (isRepeated)
     throw yamlError(
       state,
@@ -119,7 +121,9 @@ const readYamlDirective = (state: ParserState, isRepeated: boolean): void => {
       'A %YAML directive appears twice for the same document: expected at most one %YAML directive per document'
     );
 
-  state.pos += YAML_DIRECTIVE.length;
+  const directiveStart = state.position;
+
+  state.position += YAML_DIRECTIVE.length;
   skipSpaces(state);
 
   const version = readDirectiveToken(state);
@@ -164,7 +168,7 @@ const readDirective = (
 };
 
 const isDirectiveLine = (state: ParserState, lineIndent: number): boolean =>
-  lineIndent === 0 && state.src.charCodeAt(state.pos) === CHAR_PERCENT;
+  lineIndent === 0 && state.source.charCodeAt(state.position) === CHAR_PERCENT;
 
 const readDirectives = (state: ParserState): void => {
   let hasYamlDirective = false;
@@ -175,7 +179,7 @@ const readDirectives = (state: ParserState): void => {
     lineIndent = skipNewlinesAndComments(state);
   } while (isDirectiveLine(state, lineIndent));
 
-  if (!isDocumentStart(state, state.pos))
+  if (!isDocumentStart(state, state.position))
     throw yamlError(
       state,
       'INVALID_DIRECTIVE',
@@ -188,15 +192,15 @@ export const skipToDocument = (state: ParserState): boolean => {
 
   let lineIndent = skipNewlinesAndComments(state);
 
-  while (isDocumentEnd(state, state.pos)) {
+  while (isDocumentEnd(state, state.position)) {
     skipDocumentEndLine(state);
     lineIndent = skipNewlinesAndComments(state);
   }
 
-  if (state.pos >= state.len) return false;
+  if (state.position >= state.sourceLength) return false;
 
   if (isDirectiveLine(state, lineIndent)) readDirectives(state);
-  else state.pos -= lineIndent;
+  else state.position -= lineIndent;
 
   return true;
 };
@@ -216,7 +220,7 @@ const readBareDocumentRoot = (state: ParserState): unknown => {
 export const readDocument = (state: ParserState): unknown => {
   state.anchors.nodes.clear();
 
-  const value = isDocumentStart(state, state.pos)
+  const value = isDocumentStart(state, state.position)
     ? readMarkedDocumentRoot(state)
     : readBareDocumentRoot(state);
 

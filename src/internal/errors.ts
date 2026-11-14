@@ -33,15 +33,15 @@ export const quote = (text: string): string => {
 };
 
 export const characterAt = (state: ParserState, position: number): string =>
-  String.fromCodePoint(state.src.codePointAt(position)!);
+  String.fromCodePoint(state.source.codePointAt(position)!);
 
 const locate = (state: ParserState, position: number): SourceLocation => {
-  const end = Math.min(position, state.len);
+  const end = Math.min(position, state.sourceLength);
   let line = 1;
   let lineStart = 0;
 
   for (let index = 0; index < end; index++) {
-    if (state.src.charCodeAt(index) !== CHAR_LINE_FEED) continue;
+    if (state.source.charCodeAt(index) !== CHAR_LINE_FEED) continue;
 
     line++;
     lineStart = index + 1;
@@ -54,7 +54,7 @@ export const yamlError = (
   state: ParserState,
   code: YamlErrorCode,
   message: string,
-  position: number = state.pos,
+  position: number = state.position,
   cause?: RangeError
 ): YamlError => {
   const { line, column } = locate(state, position);
@@ -70,6 +70,6 @@ export const engineLimitError = (
     state,
     'ENGINE_LIMIT',
     'The input exhausted an engine limit, such as the call stack: expected a smaller or less deeply nested document',
-    state.pos,
+    state.position,
     cause
   );

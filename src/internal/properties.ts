@@ -32,16 +32,17 @@ export const readNodeProperties = (
   state: ParserState,
   inFlow: boolean
 ): NodeProperties | undefined => {
-  let name: string | undefined;
+  let anchorName: string | undefined;
   let tag: NodeTag | undefined;
 
-  while (state.pos < state.len) {
+  while (state.position < state.sourceLength) {
     skipSpaces(state);
 
-    const code = state.src.charCodeAt(state.pos);
+    const code = state.source.charCodeAt(state.position);
 
     if (code === CHAR_EXCLAMATION) {
-      if (tag !== undefined) throw secondTagError(state, tag.source, state.pos);
+      if (tag !== undefined)
+        throw secondTagError(state, tag.source, state.position);
 
       tag = readTag(state, inFlow);
       continue;
@@ -49,16 +50,16 @@ export const readNodeProperties = (
 
     if (code !== CHAR_AMPERSAND) break;
 
-    if (name !== undefined) throw secondAnchorError(state, name);
+    if (anchorName !== undefined) throw secondAnchorError(state, anchorName);
 
-    state.pos++;
-    name = readAnchorName(state);
+    state.position++;
+    anchorName = readAnchorName(state);
   }
 
-  if (!name && tag === undefined) return undefined;
+  if (!anchorName && tag === undefined) return undefined;
 
   return {
-    anchor: name ? declareAnchor(state, name) : undefined,
+    anchor: anchorName ? declareAnchor(state, anchorName) : undefined,
     tag,
   };
 };

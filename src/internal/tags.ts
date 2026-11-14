@@ -18,7 +18,7 @@ import {
   resolveFloat,
   resolveInteger,
   resolveScalar,
-} from './scalars.js';
+} from './schema.js';
 
 const CORE_TAG_PREFIX = 'tag:yaml.org,2002:';
 const TAG_DIRECTIVE = '%TAG';
@@ -124,13 +124,13 @@ const findVerbatimTagEnd = (state: ParserState, start: number): number => {
   let cursor = start + 2;
 
   while (
-    cursor < state.len &&
-    state.src.charCodeAt(cursor) !== CHAR_GREATER_THAN &&
-    !isBlank(state.src.charCodeAt(cursor))
+    cursor < state.sourceLength &&
+    state.source.charCodeAt(cursor) !== CHAR_GREATER_THAN &&
+    !isBlank(state.source.charCodeAt(cursor))
   )
     cursor++;
 
-  if (state.src.charCodeAt(cursor) !== CHAR_GREATER_THAN)
+  if (state.source.charCodeAt(cursor) !== CHAR_GREATER_THAN)
     throw yamlError(
       state,
       'INVALID_TAG',
@@ -142,12 +142,15 @@ const findVerbatimTagEnd = (state: ParserState, start: number): number => {
 };
 
 const findTagEnd = (state: ParserState, start: number): number => {
-  if (state.src.charCodeAt(start + 1) === CHAR_LESS_THAN)
+  if (state.source.charCodeAt(start + 1) === CHAR_LESS_THAN)
     return findVerbatimTagEnd(state, start);
 
   let cursor = start + 1;
 
-  while (cursor < state.len && !isTagEnd(state.src.charCodeAt(cursor)))
+  while (
+    cursor < state.sourceLength &&
+    !isTagEnd(state.source.charCodeAt(cursor))
+  )
     cursor++;
 
   return cursor;
@@ -233,15 +236,15 @@ const resolveTagName = (
 };
 
 export const readTag = (state: ParserState, inFlow: boolean): NodeTag => {
-  const start = state.pos;
+  const start = state.position;
   const end = findTagEnd(state, start);
-  const source = state.src.slice(start, end);
+  const source = state.source.slice(start, end);
 
-  state.pos = end;
+  state.position = end;
 
   if (
-    state.pos < state.len &&
-    !isTagFollower(state.src.charCodeAt(state.pos), inFlow)
+    state.position < state.sourceLength &&
+    !isTagFollower(state.source.charCodeAt(state.position), inFlow)
   )
     throw yamlError(
       state,
@@ -310,16 +313,19 @@ export const checkCollectionTag = (
 };
 
 export const isTagDirective = (state: ParserState): boolean =>
-  state.src.startsWith(TAG_DIRECTIVE, state.pos) &&
-  isSpaceOrTab(state.src.charCodeAt(state.pos + TAG_DIRECTIVE.length));
+  state.source.startsWith(TAG_DIRECTIVE, state.position) &&
+  isSpaceOrTab(state.source.charCodeAt(state.position + TAG_DIRECTIVE.length));
 
 export const readDirectiveToken = (state: ParserState): string => {
-  const start = state.pos;
+  const start = state.position;
 
-  while (state.pos < state.len && !isBlank(state.src.charCodeAt(state.pos)))
-    state.pos++;
+  while (
+    state.position < state.sourceLength &&
+    !isBlank(state.source.charCodeAt(state.position))
+  )
+    state.position++;
 
-  return state.src.slice(start, state.pos);
+  return state.source.slice(start, state.position);
 };
 
 const isTagHandle = (handle: string): boolean =>
@@ -333,9 +339,9 @@ const isWellFormedTagDirective = (
   isAtLineBreakOrEnd(state) && isTagHandle(handle) && TAG_PREFIX.test(prefix);
 
 export const readTagDirective = (state: ParserState): void => {
-  const directiveStart = state.pos;
+  const directiveStart = state.position;
 
-  state.pos += TAG_DIRECTIVE.length;
+  state.position += TAG_DIRECTIVE.length;
   skipSpaces(state);
 
   const handle = readDirectiveToken(state);
