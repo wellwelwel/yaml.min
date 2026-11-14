@@ -16,6 +16,11 @@ type KeyForm = {
   parsed: (name: string, value: unknown) => unknown;
 };
 
+type KeyDocument = {
+  document: (key: string) => string;
+  parsed: unknown;
+};
+
 type HeldValue = { text: string; parsed: unknown };
 
 type KeyCase = {
@@ -239,6 +244,88 @@ describe('A mapping never repeats a key', () => {
     it(`accepts ${name} once the second key differs`, () =>
       assertParsesTo(accepted, parsed));
   }
+});
+
+describe('A key that reads as the merge key "<<" never merges', () => {
+  const mergedSpellings = {
+    plain: '<<',
+    'with the non-specific tag': '! <<',
+    'tagged !!str without quotes': '!!str <<',
+    'double-quoted': '"<<"',
+    'single-quoted': "'<<'",
+    'with an escape': '"\\x3c<"',
+    'through an alias': '*name ',
+  };
+  const literalSpellings = {
+    'double-quoted and tagged !!str': '!!str "<<"',
+    'single-quoted and tagged !!str': "!!str '<<'",
+    'double-quoted with a verbatim !!str tag': '!<tag:yaml.org,2002:str> "<<"',
+  };
+  const keyForms: Record<string, KeyDocument> = {
+    'a block mapping key': {
+      document: (key) => `anchor: &name <<\n${key}: value\n`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit key': {
+      document: (key) => `anchor: &name <<\n? ${key}\n: value\n`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit key without a value': {
+      document: (key) => `anchor: &name <<\n? ${key}\n`,
+      parsed: { anchor: '<<', '<<': null },
+    },
+    'a flow mapping key': {
+      document: (key) => `{ anchor: &name <<, ${key}: value }`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit pair key in a flow sequence': {
+      document: (key) => `[&name <<, ? ${key} : value]`,
+      parsed: ['<<', { '<<': 'value' }],
+    },
+  };
+  const flowSequencePairs = {
+    plain: '[<<: value]',
+    'with the non-specific tag': '[! <<: value]',
+    'tagged !!str without quotes': '[!!str <<: value]',
+  };
+  const mergingDocument = read('mapping-keys--merge-key-holding-alias.yaml');
+
+  for (const [form, { document, parsed }] of Object.entries(keyForms)) {
+    for (const [spelling, key] of Object.entries(mergedSpellings)) {
+      it(`rejects "<<" written ${spelling} as ${form}`, () =>
+        strict.throws(() => parse(document(key)), { code: 'MERGE_KEY' }));
+    }
+
+    for (const [spelling, key] of Object.entries(literalSpellings)) {
+      it(`keeps "<<" written ${spelling} as ${form}`, () =>
+        assertParsesTo(document(key), parsed));
+    }
+  }
+
+  for (const [spelling, input] of Object.entries(flowSequencePairs)) {
+    it(`rejects "<<" written ${spelling} as a pair key in a flow sequence`, () =>
+      strict.throws(() => parse(input), { code: 'MERGE_KEY' }));
+  }
+
+  it('rejects "<<" holding an aliased mapping', () =>
+    strict.throws(() => parse(mergingDocument), { code: 'MERGE_KEY' }));
+
+  it('keeps !!str "<<" as a literal key holding the aliased mapping', () =>
+    assertParsesTo(mergingDocument.replace('<<', '!!str "<<"'), {
+      defaults: { a: 1, b: 2 },
+      dev: { '<<': { a: 1, b: 2 }, c: 3 },
+    }));
+
+  it('rejects an alias to a quoted !!str "<<" as a key', () =>
+    strict.throws(() => parse('anchor: &name !!str "<<"\n*name : value\n'), {
+      code: 'MERGE_KEY',
+    }));
+
+  it('accepts "<<" as a value', () =>
+    assertParsesTo('a: <<\nb: [<<, {c: <<}]\n', {
+      a: '<<',
+      b: ['<<', { c: '<<' }],
+    }));
 });
 
 describe('Mapping keys named after prototype properties', () => {

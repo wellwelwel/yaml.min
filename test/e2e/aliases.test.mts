@@ -74,14 +74,6 @@ describe('An anchor leaves the value it labels unchanged', () => {
   }
 });
 
-describe('A merge key is an ordinary key', () => {
-  it('keeps "<<" as a key holding the aliased mapping', () =>
-    assertParsesTo(read('aliases--anchor-map-no-merge.yaml'), {
-      defaults: { a: 1, b: 2 },
-      dev: { '<<': { a: 1, b: 2 }, c: 3 },
-    }));
-});
-
 describe('An alias must name a node completed before it', () => {
   const unresolvableAliases = {
     'to an undefined anchor as a block mapping value':

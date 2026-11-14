@@ -27,7 +27,7 @@ import {
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
 import { characterAt, quote, yamlError } from './errors.js';
-import { checkImplicitKey, setMapKey } from './keys.js';
+import { checkImplicitKey, isQuotedStrKey, setMapKey } from './keys.js';
 import {
   countIndentSpaces,
   isDocumentMarker,
@@ -249,7 +249,14 @@ const completeImplicitPair = (
   const pair: Record<string, unknown> = {};
 
   skipFlowIndicator(state, ownerIndent);
-  setMapKey(state, pair, key, keyStart, parseFlowValue(state, ownerIndent));
+  setMapKey(
+    state,
+    pair,
+    key,
+    false,
+    keyStart,
+    parseFlowValue(state, ownerIndent)
+  );
   leaveCollection(state);
 
   return pair;
@@ -335,13 +342,20 @@ const readFlowPair = (
   skipExplicitKeyIndicator(state, ownerIndent);
 
   const keyStart = state.pos;
-  const key = readFlowNode(state, ownerIndent, false);
+  const properties = readFlowNodeProperties(state, ownerIndent);
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
+  const key = withAnchor(
+    state,
+    properties?.anchor,
+    parseFlowNode(state, ownerIndent, properties?.tag)
+  );
 
   skipFlowSeparation(state, ownerIndent);
   setMapKey(
     state,
     target,
     key,
+    isQuotedStr,
     keyStart,
     parseFlowMapValue(state, ownerIndent)
   );

@@ -100,6 +100,9 @@ export const isFlowIndicator = (code: number): boolean =>
   code === CHAR_LEFT_BRACKET ||
   code === CHAR_LEFT_BRACE;
 
+export const isQuote = (code: number): boolean =>
+  code === CHAR_SINGLE_QUOTE || code === CHAR_DOUBLE_QUOTE;
+
 export const isContentIndicator = (code: number): boolean =>
   code === CHAR_SINGLE_QUOTE ||
   code === CHAR_DOUBLE_QUOTE ||

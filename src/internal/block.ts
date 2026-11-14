@@ -15,12 +15,18 @@ import {
   CHAR_STAR,
   CHAR_TAB,
   isContentIndicator,
+  isQuote,
   isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
 import { quote, yamlError } from './errors.js';
 import { parseFlowMap, parseFlowSequence } from './flow.js';
-import { checkImplicitKey, collectionKeyError, setMapKey } from './keys.js';
+import {
+  checkImplicitKey,
+  collectionKeyError,
+  isQuotedStrKey,
+  setMapKey,
+} from './keys.js';
 import {
   countIndentSpaces,
   isAtLineBreakOrEnd,
@@ -103,8 +109,7 @@ const hasMappingIndicatorInLine = (state: ParserState): boolean =>
 const opensImplicitKey = (state: ParserState): boolean => {
   const code = state.src.charCodeAt(state.pos);
 
-  if (code === CHAR_SINGLE_QUOTE || code === CHAR_DOUBLE_QUOTE)
-    return isQuotedMapKey(state, code);
+  if (isQuote(code)) return isQuotedMapKey(state, code);
 
   return !isContentIndicator(code) && hasMappingIndicatorInLine(state);
 };
@@ -311,6 +316,7 @@ const parseMapEntry = (
 ): void => {
   const entryStart = state.pos;
   const properties = readNodeProperties(state, false);
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
   const key = withAnchor(
     state,
     properties?.anchor,
@@ -329,7 +335,14 @@ const parseMapEntry = (
 
   checkImplicitKey(state, entryStart);
   skipIndicator(state);
-  setMapKey(state, result, key, entryStart, parseMapValue(state, indent));
+  setMapKey(
+    state,
+    result,
+    key,
+    isQuotedStr,
+    entryStart,
+    parseMapValue(state, indent)
+  );
   finishLine(state);
 };
 
@@ -342,6 +355,7 @@ const parseExplicitMapEntry = (
 
   const keyStart = state.pos;
   const properties = readNodeProperties(state, false);
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
   const key = withAnchor(
     state,
     properties?.anchor,
@@ -359,6 +373,7 @@ const parseExplicitMapEntry = (
       state,
       result,
       key,
+      isQuotedStr,
       keyStart,
       parseIndicatedNode(state, indent, true)
     );
@@ -374,7 +389,7 @@ const parseExplicitMapEntry = (
       `An explicit key is followed by an unexpected line: expected ":" at ${indent} spaces of indentation, or the next entry`
     );
 
-  setMapKey(state, result, key, keyStart, null);
+  setMapKey(state, result, key, isQuotedStr, keyStart, null);
 
   state.pos -= nextIndent;
 };

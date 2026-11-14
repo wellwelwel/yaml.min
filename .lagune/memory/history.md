@@ -239,3 +239,17 @@
 - **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
 - **What it is:** A mapping key written without the `?` indicator must fit on one line and be at most 1,024 characters long. This parser accepts a quoted key that spans several lines (`"multi` / ` line": value`), which conformant parsers reject, and a key of any length, which the specification forbids.
 - **Closed:** 2026-11-14
+
+### Release workflow runs tag-pinned actions with publish rights
+
+- **Classification:** Critical
+- **Category:** Release pipeline compromise through code from an untrusted control sphere (CWE-829, CWE-494)
+- **What it is:** The workflow that publishes the package to **npm** runs on every push to the main branch and publishes whenever **Release Please** creates a release. Its job holds write access to the repository's contents and pull requests and the right to request an identity token. That identity token is the publish credential: no **npm** token is stored anywhere, and **npm** trusted publishing accepts the token **GitHub** issues to this workflow in place of one. It runs actions referenced by version tags such as `v3` and `v4`, which their owners can point at different code at any time, rather than by fixed commit hashes. One of them, **Release Please**, comes from a third party. The same job installs the dev dependencies, builds the package, and publishes it with provenance.
+- **Closed:** 2026-11-14
+
+### Merge keys read as an ordinary key
+
+- **Classification:** Medium
+- **Category:** Interpretation conflict with tools that apply merge keys, taught by documentation the parser contradicts (CWE-436, CWE-1068)
+- **What it is:** Many YAML files use the older `<<: *defaults` convention to copy the entries of a shared block into another mapping. **yaml.min** does not apply it, which matches YAML 1.2: `<<` is stored as an ordinary key holding the shared block, and the mapping gains none of its entries. The project's own README teaches the convention anyway. Its "Anchors and Aliases" example builds `development` and `production` from `<<: *defaults` and never says the defaults stay nested under a key named `<<`. Parsing that exact example returns no `adapter` and no `host` for `production`.
+- **Closed:** 2026-11-14

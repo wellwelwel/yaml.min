@@ -58,6 +58,7 @@ const readEveryDocument = (state: ParserState): unknown[] => {
  * - Its collections nest at most `maxDepth` levels deep (256 by default), counting the levels each alias repeats.
  * - No mapping key in it is named `__proto__`, and no key named `prototype` or after another `Object.prototype` member, such as `constructor` or `toString`, holds a mapping, unless `allowUnsafeKeys` is `true`.
  * - Each mapping key is the text form of a scalar, with `null` as `''`, and appears once in its mapping.
+ * - YAML 1.2 has no merge keys, so no mapping merges another, and a `<<` key appears only when written as a quoted scalar tagged `!!str`, such as `!!str "<<"`.
  * - Test for a key with `Object.hasOwn()`, not `in`.
  * - An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears.
  * - Numbers are `Infinity`, `-Infinity`, or `NaN` only for YAML's `.inf`, `-.inf`, and `.nan` forms, and those values do not survive a JSON round trip.
@@ -67,6 +68,7 @@ const readEveryDocument = (state: ParserState): unknown[] => {
  * @throws {TypeError} When `input` is not a string, or `maxDepth` is not an integer from 0 to 400.
  * @throws {YamlError} When `input` is not valid YAML, holds more than one document (use `parseAll` for a stream), nests collections more than `maxDepth` levels deep (including the levels aliases repeat), has aliases that repeat more than the larger of 1,000,000 characters and 10 times its length, has an alias inside the node its own anchor labels, or exhausts an engine limit such as the call stack.
  * @throws {YamlError} When a mapping key is a sequence or a mapping, repeats in its mapping (including keys that only share a text form, such as `0x10` and `16`), or, unless `allowUnsafeKeys` is `true`, is named `__proto__`, or is named `prototype` or after another `Object.prototype` member and holds a mapping.
+ * @throws {YamlError} When a mapping key reads as `<<`, the merge key some parsers apply, whether plain, quoted, or through an alias, unless it is a quoted scalar tagged `!!str`.
  * @throws {YamlError} When a tag is not a core schema tag, uses a handle no `%TAG` directive declares, labels an alias, or labels a value that does not fit it, such as `!!int "five"`.
  */
 export const parse = (input: string, options?: ParseOptions): unknown =>
@@ -80,6 +82,7 @@ export const parse = (input: string, options?: ParseOptions): unknown =>
  * @throws {TypeError} When `input` is not a string, or `maxDepth` is not an integer from 0 to 400.
  * @throws {YamlError} When any document in `input` is not valid YAML, nests collections more than `maxDepth` levels deep (including the levels aliases repeat), has an alias inside the node its own anchor labels, or exhausts an engine limit such as the call stack.
  * @throws {YamlError} When a mapping key in any document is a sequence or a mapping, repeats in its mapping (including keys that only share a text form, such as `0x10` and `16`), or, unless `allowUnsafeKeys` is `true`, is named `__proto__`, or is named `prototype` or after another `Object.prototype` member and holds a mapping.
+ * @throws {YamlError} When a mapping key in any document reads as `<<`, the merge key some parsers apply, whether plain, quoted, or through an alias, unless it is a quoted scalar tagged `!!str`.
  * @throws {YamlError} When a tag in any document is not a core schema tag, uses a handle no `%TAG` directive of that document declares, labels an alias, or labels a value that does not fit it.
  * @throws {YamlError} When the aliases of all documents together repeat more than the larger of 1,000,000 characters and 10 times the length of `input`.
  */

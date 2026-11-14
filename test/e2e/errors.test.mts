@@ -53,6 +53,7 @@ describe('Errors carry a stable code and the line and column of the problem', ()
     INVALID_ESCAPE: { source: '"\\q"', line: 1, column: 2 },
     INVALID_INDENTATION: { source: 'a: "x"\n  b: 1', line: 2, column: 3 },
     INVALID_TAG: { source: '!<a x', line: 1, column: 1 },
+    MERGE_KEY: { source: 'a:\n  <<: 1', line: 2, column: 3 },
     MULTIPLE_DOCUMENTS: { source: 'a\n---\nb', line: 2, column: 1 },
     NESTING_TOO_DEEP: { source: '['.repeat(257), line: 1, column: 257 },
     NON_PRINTABLE_CHARACTER: { source: 'a\u0001', line: 1, column: 2 },

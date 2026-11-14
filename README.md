@@ -220,14 +220,16 @@ defaults: &defaults
 
 development:
   database: dev_db
-  <<: *defaults
+  connection: *defaults
 
 production:
   database: prod_db
-  <<: *defaults
+  connection: *defaults
 ```
 
 An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears. An alias can only refer to a node that is already complete. See [Untrusted Input](#untrusted-input) for how much aliases can repeat.
+
+**yaml.min** follows **YAML** 1.2, which has no merge keys, so it never copies the entries of one mapping into another. Parsers that apply the older merge key read `<<: *defaults` as those copied entries. To never read a document differently from them, **yaml.min** rejects a key that reads as `<<`, whether plain, quoted, or through an alias, with `MERGE_KEY`. For a literal `<<` key, write it as a quoted scalar tagged `!!str`, such as `!!str "<<"`, which those parsers also read as text.
 
 ### Explicit Keys
 
@@ -303,6 +305,7 @@ try {
 | `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                             |
 | `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                             |
 | `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                                      |
+| `MERGE_KEY`                    | A key reads as the merge key `<<` and is not a quoted scalar tagged `!!str`. See [Anchors and Aliases](#anchors-and-aliases).                          |
 | `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                                  |
 | `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`, counting the levels aliases repeat.                                                                           |
 | `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                             |

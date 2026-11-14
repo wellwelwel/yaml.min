@@ -1,9 +1,10 @@
 import type { YamlError } from '../error.js';
-import type { ParserState } from '../types.js';
-import { isLineBreak } from './chars.js';
+import type { NodeTag, ParserState } from '../types.js';
+import { isLineBreak, isQuote } from './chars.js';
 import { quote, yamlError } from './errors.js';
 
 const MAX_IMPLICIT_KEY_LENGTH = 1024;
+const MERGE_KEY = '<<';
 
 const PROTOTYPE_KEYS: ReadonlySet<string> = new Set([
   '__proto__',
@@ -64,6 +65,14 @@ export const collectionKeyError = (
     state,
     'COLLECTION_KEY',
     'A mapping key is a sequence or a mapping: expected a scalar key, such as text, a number, a boolean, or null',
+    keyStart
+  );
+
+const mergeKeyError = (state: ParserState, keyStart: number): YamlError =>
+  yamlError(
+    state,
+    'MERGE_KEY',
+    'The mapping key "<<" asks parsers that support merge keys to merge mappings, which yaml.min never does: expected another key, or !!str "<<" for a literal "<<" key',
     keyStart
   );
 
@@ -151,15 +160,22 @@ const definePrototypeKey = (
   });
 };
 
+export const isQuotedStrKey = (
+  state: ParserState,
+  tag: NodeTag | undefined
+): boolean => tag?.name === 'str' && isQuote(state.src.charCodeAt(state.pos));
+
 export const setMapKey = (
   state: ParserState,
   target: Record<string, unknown>,
   key: unknown,
+  isQuotedStr: boolean,
   keyStart: number,
   value: unknown
 ): void => {
   const name = stringifyKey(state, key, keyStart);
 
+  if (name === MERGE_KEY && !isQuotedStr) throw mergeKeyError(state, keyStart);
   if (Object.hasOwn(target, name))
     throw duplicateKeyError(state, name, keyStart);
   if (isPrototypeKey(name))
