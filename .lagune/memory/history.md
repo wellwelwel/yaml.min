@@ -155,3 +155,10 @@
 - **Category:** Interpretation conflict through ignored type declarations, parser differential (CWE-436, CWE-1287)
 - **What it is:** A YAML document can state a value's type outright with a tag such as `!!str`, `!!bool`, `!!int`, or `!!null`. The parser reads past every tag and throws it away without telling anyone, then decides the type from the bare text alone, exactly as if the tag had never been written. Tags it does not recognise, including application-specific ones like `!custom`, are dropped the same way instead of being refused.
 - **Closed:** 2026-11-13
+
+### Comments and directives ignore bare CR line breaks
+
+- **Classification:** Medium
+- **Category:** Interpretation conflict between parsers (CWE-436)
+- **What it is:** YAML ends a line with a line feed (LF), a carriage return followed by a line feed (CRLF), or a bare carriage return (CR). The parser honors all three everywhere except in comments and directive lines, which end only at a line feed. In a document written with bare CR line breaks, everything after the first comment or directive becomes part of it, and the parser returns what came before as if it were the whole document.
+- **Closed:** 2026-11-14

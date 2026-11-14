@@ -53,14 +53,7 @@ A control is held even when a reason to skip it feels reasonable:
 
 ## Governance
 
-This charter supersedes ad hoc decisions. When a choice in the code conflicts with a principle here, the principle wins and the code changes.
-
-Speed is never a reason to drop a control. yaml.min exists to be the fast parser, so the pressure to trade a bound or a check for a benchmark number is constant and expected. That trade is not available. When a control genuinely costs too much, the answer is a cheaper control that holds the same line, never no control.
-
-Every principle applies to the whole parser, not only to the entry point. A guard that exists on one path and not its siblings does not satisfy the principle it belongs to.
-
-Later phases (detect, plan, harden, verify) work from this charter and tie what they find back to the principle it belongs to. A finding with no principle behind it means the charter is incomplete, so amend it here rather than working around it.
-
-Amend this charter by rerunning `/lagune.charter`, which reconciles it against the project as it is now: principles that still hold are kept, principles that changed are rewritten, and principles that no longer apply are removed rather than kept for history. Every amendment updates the version below: MAJOR when a principle is removed or redefined, MINOR when one is added or materially widened, PATCH for wording.
+- This charter guides every security decision in each Lagune phase, and every change to it is reviewed and approved by the maintainer.
+- It holds only what a deterministic check cannot capture, so it never repeats a control that linters or automated tools already enforces.
 
 Version: 1.0.0 | Ratified: 2026-08-04

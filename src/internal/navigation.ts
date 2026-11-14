@@ -68,11 +68,7 @@ export const skipSpaces = (state: ParserState): void => {
 };
 
 export const skipToLineEnd = (state: ParserState): void => {
-  while (
-    state.pos < state.len &&
-    state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
-  )
-    state.pos++;
+  while (!isAtLineBreakOrEnd(state)) state.pos++;
 };
 
 export const skipComment = (state: ParserState): void => {

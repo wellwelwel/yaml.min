@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 
 const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+const { parse, parseAll } = require('../../src/index.ts');
 
 describe('Every construct reads CRLF and bare CR line breaks', () => {
   const lineBreakDocuments = {
@@ -116,5 +116,93 @@ describe('Every construct reads CRLF and bare CR line breaks', () => {
     lineBreakDocuments
   )) {
     it(name, () => strict.deepEqual(parse(input), expected));
+  }
+});
+
+describe('A bare CR ends every comment and directive line', () => {
+  const documentsWithCommentsAndDirectives = {
+    'a trailing comment': {
+      input: 'enabled: false # reviewed\rpolicy: strict\r',
+      expected: { enabled: false, policy: 'strict' },
+    },
+    'a comment line': {
+      input: '# settings\rname: app\r',
+      expected: { name: 'app' },
+    },
+    'a comment line indented by a tab': {
+      input: 'a: 1\r\t# note\rb: 2\r',
+      expected: { a: 1, b: 2 },
+    },
+    'an empty mapping value with a comment': {
+      input: 'a: # note\r  b: 1\rc: 2\r',
+      expected: { a: { b: 1 }, c: 2 },
+    },
+    'a sequence dash with a comment': {
+      input: '- # note\r  a: 1\r- b\r',
+      expected: [{ a: 1 }, 'b'],
+    },
+    'a block scalar header with a comment': {
+      input: 'text: | # note\r  hello\rnext: 1\r',
+      expected: { text: 'hello\n', next: 1 },
+    },
+    'a comment inside a flow collection': {
+      input: '[a, # note\r b]\r',
+      expected: ['a', 'b'],
+    },
+    'a document start marker with a comment': {
+      input: '--- # note\rname: app\r',
+      expected: { name: 'app' },
+    },
+    'a %YAML directive': {
+      input: '%YAML 1.2\r---\rname: app\r',
+      expected: { name: 'app' },
+    },
+    'a reserved directive': {
+      input: '%FOO bar\r---\rname: app\r',
+      expected: { name: 'app' },
+    },
+    'a %TAG directive with a comment': {
+      input: '%TAG !e! tag:example.com,2000: # note\r---\rname: app\r',
+      expected: { name: 'app' },
+    },
+    'a trailing comment in a document whose other lines end with LF': {
+      input: 'a: 1 # note\rhidden: 2\nb: 3\n',
+      expected: { a: 1, hidden: 2, b: 3 },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(
+    documentsWithCommentsAndDirectives
+  )) {
+    it(`reads the lines after ${name}`, () =>
+      strict.deepEqual(parse(input), expected));
+  }
+
+  it('reads every document after a document end marker with a comment', () =>
+    strict.deepEqual(parseAll('a: 1\r... # note\r---\rb: 2\r'), [
+      { a: 1 },
+      { b: 2 },
+    ]));
+});
+
+describe('A comment that ends with a bare CR hides no line from the checks', () => {
+  const invalidDocuments = {
+    'a repeated key': {
+      input: 'admin: false # note\radmin: true\r',
+      code: 'DUPLICATE_KEY',
+    },
+    'a second document': {
+      input: 'a: 1 # note\r---\rb: 2\r',
+      code: 'MULTIPLE_DOCUMENTS',
+    },
+    'an unterminated flow collection': {
+      input: 'a: 1 # note\rb: [1, 2\r',
+      code: 'UNTERMINATED_FLOW_COLLECTION',
+    },
+  };
+
+  for (const [name, { input, code }] of Object.entries(invalidDocuments)) {
+    it(`rejects ${name} after the comment`, () =>
+      strict.throws(() => parse(input), { code }));
   }
 });
