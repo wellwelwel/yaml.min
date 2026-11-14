@@ -300,6 +300,7 @@ try {
 | `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                   |
 | `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or puts its `:` over 1,024 characters after its start. |
 | `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                 |
+| `INVALID_ANCHOR`               | An anchor labels a sequence that starts on its line.                                                                                         |
 | `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                 |
 | `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                  |
 | `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                   |

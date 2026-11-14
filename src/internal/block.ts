@@ -445,14 +445,21 @@ const parseCompactMap = (
 const parseCompactSequence = (
   state: ParserState,
   column: number,
-  tag: NodeTag | undefined
+  properties: NodeProperties | undefined
 ): unknown[] => {
-  if (tag !== undefined)
+  if (properties?.tag !== undefined)
     throw yamlError(
       state,
       'INVALID_TAG',
-      `The tag ${quote(tag.source)} labels a sequence that starts on the same line: expected the tag alone on its line, with the sequence entries below it`,
-      tag.start
+      `The tag ${quote(properties.tag.source)} labels a sequence that starts on the same line: expected the tag alone on its line, with the sequence entries below it`,
+      properties.tag.start
+    );
+
+  if (properties?.anchor !== undefined)
+    throw yamlError(
+      state,
+      'INVALID_ANCHOR',
+      `The anchor ${quote(`&${properties.anchor.name}`)} labels a sequence that starts on the same line: expected the anchor alone on its line, with the sequence entries below it`
     );
 
   return parseBlockSequence(state, column, true, undefined);
@@ -486,19 +493,10 @@ const parseInlineValue = (
   properties: NodeProperties | undefined
 ): unknown => {
   if (isSequenceEntry(state))
-    return withAnchor(
+    return parseCompactSequence(
       state,
-      properties?.anchor,
-      parseCompactSequence(
-        state,
-        compactCollectionColumn(
-          state,
-          ownerIndent,
-          indicatorStart,
-          contentStart
-        ),
-        properties?.tag
-      )
+      compactCollectionColumn(state, ownerIndent, indicatorStart, contentStart),
+      properties
     );
 
   if (opensImplicitKey(state))

@@ -131,6 +131,41 @@ describe('An anchor labels the implicit key on its line, not the mapping', () =>
   }
 });
 
+describe('An anchor labels a sequence only from the line above it', () => {
+  const sameLineSequences = {
+    'a sequence entry': '- &a - b\n',
+    'a sequence entry whose sequence nests another': '- &a - - b\n',
+    'a sequence entry whose sequence holds one empty entry': '- &a -\n',
+    'a sequence entry with a tab before the sequence': '- &a\t- b\n',
+    'a sequence entry a later alias refers to': '- &a - b\n- *a\n',
+    'a compact nested sequence': '- - &a - b\n',
+    'an indentless sequence under a key': 'k:\n- &a - b\n',
+    'an explicit value': '? x\n: &a - b\n',
+  };
+  const sequencesBelowAnchors = {
+    'a sequence entry': {
+      input: '- &a\n  - b\n- *a\n',
+      expected: [['b'], ['b']],
+    },
+    'an explicit value': {
+      input: '? x\n: &a\n  - b\ny: *a\n',
+      expected: { x: ['b'], y: ['b'] },
+    },
+  };
+
+  for (const [name, input] of Object.entries(sameLineSequences)) {
+    it(`rejects an anchor on the line where its sequence starts, in ${name}`, () =>
+      strict.throws(() => parse(input), { code: 'INVALID_ANCHOR' }));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(
+    sequencesBelowAnchors
+  )) {
+    it(`labels the sequence below an anchor alone on its line, in ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
 describe('An alias must name a node completed before it', () => {
   const unresolvableAliases = {
     'to an undefined anchor as a block mapping value':

@@ -281,3 +281,10 @@
 - **Category:** Parser differential through Unicode handling (CWE-436: Interpretation Conflict, CWE-176: Improper Handling of Unicode Encoding)
 - **What it is:** A byte order mark (the invisible character U+FEFF) is removed only when it opens the whole input. When it opens a later document of a stream read with `parseAll`, it is kept. Before a bare document it becomes the first character of the first key, so a document that starts with the mark and `role: admin` produces a key that prints as `role` but is not `role`. Before a `---` line it makes the whole stream fail. **js-yaml** (5.4.0, issue 791) and **yaml** both drop the mark at the start of every document and read `role: admin`.
 - **Closed:** 2026-11-14
+
+### Anchors before a same-line sequence
+
+- **Classification:** Medium
+- **Category:** Acceptance of syntactically invalid input, creating a parser differential (CWE-1286: Improper Validation of Syntactic Correctness of Input, CWE-436: Interpretation Conflict)
+- **What it is:** After a `- ` or `: ` indicator, an anchor followed by a sequence that starts on the same line, such as `- &a - b`, is accepted, and the anchor labels the inner sequence. YAML does not allow node properties before a sequence that starts on the same line, and **js-yaml** and **yaml** both reject it (**yaml** made this strict in 2.5.0, issue 557). A tag in the same place is already rejected, so only the anchor slips through.
+- **Closed:** 2026-11-14
