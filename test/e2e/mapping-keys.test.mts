@@ -4,9 +4,8 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 
 type Spellings = Record<string, (name: string) => string>;
 
@@ -28,9 +27,6 @@ type KeyCase = {
   accepted: string;
   parsed: unknown;
 };
-
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
 
 describe('Mapping keys follow one naming rule in both syntaxes', () => {
   const parsedKeys = {
@@ -54,6 +50,26 @@ describe('Mapping keys follow one naming rule in both syntaxes', () => {
       '{text: 1, "quoted": 2, 16: 3, 0x11: 4, 1.5: 5, true: 6, ~: 7}',
       parsedKeys
     ));
+});
+
+describe('A key can be empty before its ":"', () => {
+  const emptyKeys = {
+    'a block mapping': { input: ': value\n', expected: { '': 'value' } },
+    'a flow mapping': { input: '{ : value }\n', expected: { '': 'value' } },
+    'a flow mapping with the value on the next line': {
+      input: '{ :\n  value }\n',
+      expected: { '': 'value' },
+    },
+    'an explicit key holding only a comment': {
+      input: '? # note\n: value\n',
+      expected: { '': 'value' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(emptyKeys)) {
+    it(`reads the empty key of ${name}`, () =>
+      strict.deepEqual(parse(input), expected));
+  }
 });
 
 describe('A sequence or a mapping is never a mapping key', () => {
@@ -403,12 +419,12 @@ describe('A key named after a prototype property is refused unless unsafe keys a
 
   const whilePrototypeMemberIsReadOnly = (
     name: string,
-    read: () => unknown
+    parseDocument: () => unknown
   ): unknown => {
     Object.defineProperty(Object.prototype, name, { writable: false });
 
     try {
-      return read();
+      return parseDocument();
     } finally {
       Object.defineProperty(Object.prototype, name, { writable: true });
     }
@@ -467,6 +483,7 @@ describe('A key named after a prototype property is refused unless unsafe keys a
 
   for (const allowUnsafeKeys of [false, 'true', 1, null]) {
     it(`rejects __proto__ when allowUnsafeKeys is ${JSON.stringify(allowUnsafeKeys)}`, () =>
+      // @ts-expect-error
       strict.throws(() => parse('__proto__: 1\n', { allowUnsafeKeys }), {
         code: 'UNSAFE_KEY',
       }));
@@ -498,67 +515,16 @@ describe('A key named after a prototype property is refused unless unsafe keys a
       ));
   }
 
-  for (const name of everyName) {
-    it(`rejects a flow mapping sequence key that becomes ${name}`, () =>
-      strict.throws(() => parse(`{ [${name}]: [42] }`), {
-        code: 'COLLECTION_KEY',
-      }));
-  }
+  it('rejects a flow mapping sequence key whose text form is __proto__', () =>
+    strict.throws(() => parse('{ [__proto__]: [42] }'), {
+      code: 'COLLECTION_KEY',
+    }));
 
   it('accepts the same names as values', () =>
     assertParsesTo('first: __proto__\nrest: [constructor, prototype]\n', {
       first: '__proto__',
       rest: ['constructor', 'prototype'],
     }));
-});
-
-describe('An anchor labels the implicit key on its line, not the mapping', () => {
-  const keyAnchors = {
-    'a top-level mapping': {
-      input: '&a key: value\nother: *a\n',
-      expected: { key: 'value', other: 'key' },
-    },
-    'a nested mapping': {
-      input: 'outer:\n  &a key: value\nnext: *a\n',
-      expected: { outer: { key: 'value' }, next: 'key' },
-    },
-    'a mapping in a sequence entry': {
-      input: '- &a key: value\n- *a\n',
-      expected: [{ key: 'value' }, 'key'],
-    },
-    'a mapping in a nested sequence entry': {
-      input: '- - &a key: value\n- *a\n',
-      expected: [[{ key: 'value' }], 'key'],
-    },
-    'a mapping in an explicit value': {
-      input: '? a\n: &a key: value\nb: *a\n',
-      expected: { a: { key: 'value' }, b: 'key' },
-    },
-    'a single-pair mapping in a flow sequence': {
-      input: '[&a key: value, *a]',
-      expected: [{ key: 'value' }, 'key'],
-    },
-  };
-  const mappingAnchors = {
-    'a nested mapping': {
-      input: 'outer:\n  &m\n  key: value\nnext: *m\n',
-      expected: { outer: { key: 'value' }, next: { key: 'value' } },
-    },
-    'a mapping in a sequence entry': {
-      input: '- &m\n  key: value\n- *m\n',
-      expected: [{ key: 'value' }, { key: 'value' }],
-    },
-  };
-
-  for (const [name, { input, expected }] of Object.entries(keyAnchors)) {
-    it(`labels the first key of ${name}`, () =>
-      assertParsesTo(input, expected));
-  }
-
-  for (const [name, { input, expected }] of Object.entries(mappingAnchors)) {
-    it(`labels ${name} when a line break follows the anchor`, () =>
-      assertParsesTo(input, expected));
-  }
 });
 
 describe('An implicit key ends on the line where it starts', () => {

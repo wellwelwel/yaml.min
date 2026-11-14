@@ -4,176 +4,197 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+describe('A block sequence holds one item per "-" line', () => {
+  const sequences = {
+    'a sequence of integers': {
+      file: 'block-collections--block-seq-integers.yaml',
+      expected: [1, 2, 3],
+    },
+    'a single-item sequence that ends the input': {
+      file: 'block-collections--seq-single-item-eof.yaml',
+      expected: ['only'],
+    },
+  };
 
-describe('Block sequences', () => {
-  it('integers', () =>
-    assertParsesTo(
-      read('block-collections--block-seq-integers.yaml'),
-      [1, 2, 3]
-    ));
-
-  it('strings', () =>
-    assertParsesTo(read('block-collections--block-seq-strings.yaml'), [
-      'a',
-      'b',
-      'c',
-    ]));
-
-  it('plain', () =>
-    assertParsesTo(read('block-collections--block-seq-plain.yaml'), [
-      'one',
-      'two',
-    ]));
-
-  it('single item sequence at the end of input', () =>
-    assertParsesTo(read('block-collections--seq-single-item-eof.yaml'), [
-      'only',
-    ]));
+  for (const [name, { file, expected }] of Object.entries(sequences)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Block mappings', () => {
-  it('simple', () =>
-    assertParsesTo(read('block-collections--block-map-simple.yaml'), {
-      a: 1,
-      b: 2,
-    }));
+describe('A block mapping holds one "key: value" entry per line', () => {
+  const mappings = {
+    'a mapping of mixed scalar types': {
+      file: 'block-collections--block-map-mixed.yaml',
+      expected: { name: 'Mark McGwire', hr: 65, avg: 0.278 },
+    },
+    'a value on the line after its key': {
+      file: 'block-collections--key-colon-newline-val.yaml',
+      expected: { key: 'val' },
+    },
+    'a value after a tab': {
+      file: 'block-collections--key-colon-tab-val.yaml',
+      expected: { key: 'val' },
+    },
+  };
 
-  it('mixed types', () =>
-    assertParsesTo(read('block-collections--block-map-mixed.yaml'), {
-      name: 'Mark McGwire',
-      hr: 65,
-      avg: 0.278,
-    }));
-
-  it('plain key colon at end of line', () =>
-    assertParsesTo(read('block-collections--key-colon-newline-val.yaml'), {
-      key: 'val',
-    }));
-
-  it('plain key colon-tab value', () =>
-    assertParsesTo(read('block-collections--key-colon-tab-val.yaml'), {
-      key: 'val',
-    }));
+  for (const [name, { file, expected }] of Object.entries(mappings)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Quoted keys', () => {
-  it('double-quoted', () =>
-    assertParsesTo(read('block-collections--quoted-key-double.yaml'), {
-      'quoted key': 'value',
-    }));
+describe('A quoted scalar can be a block mapping key', () => {
+  const quotedKeys = {
+    'a double-quoted key': {
+      file: 'block-collections--quoted-key-double.yaml',
+      expected: { 'quoted key': 'value' },
+    },
+    'a single-quoted key': {
+      file: 'block-collections--quoted-key-single.yaml',
+      expected: { 'single key': 'value' },
+    },
+    'a quoted key with a tab before its colon': {
+      file: 'block-collections--quoted-key-tab-colon.yaml',
+      expected: { key: 'val' },
+    },
+    'a quoted key whose colon ends the input': {
+      file: 'block-collections--quoted-key-colon-eof.yaml',
+      expected: { k: null },
+    },
+    'a nested quoted key followed by a colon and a tab': {
+      file: 'block-collections--quoted-key-colon-tab-nested.yaml',
+      expected: { a: { k: 'val' } },
+    },
+    'a quoted key in a nested mapping': {
+      file: 'block-collections--quoted-key-nested-map.yaml',
+      expected: { outer: { inner: 'val' } },
+    },
+  };
 
-  it('single-quoted', () =>
-    assertParsesTo(read('block-collections--quoted-key-single.yaml'), {
-      'single key': 'value',
-    }));
-
-  it('quoted key with tab before colon', () =>
-    assertParsesTo(read('block-collections--quoted-key-tab-colon.yaml'), {
-      key: 'val',
-    }));
-
-  it('quoted key with colon at the end of input', () =>
-    assertParsesTo(read('block-collections--quoted-key-colon-eof.yaml'), {
-      k: null,
-    }));
-
-  it('nested quoted key followed by a colon and a tab', () =>
-    assertParsesTo(
-      read('block-collections--quoted-key-colon-tab-nested.yaml'),
-      {
-        a: { k: 'val' },
-      }
-    ));
-
-  it('quoted key as top-level map entry', () =>
-    assertParsesTo(read('block-collections--quoted-key-top-level.yaml'), {
-      name: 'John',
-    }));
-
-  it('quoted key in a nested mapping', () =>
-    assertParsesTo(read('block-collections--quoted-key-nested-map.yaml'), {
-      outer: { inner: 'val' },
-    }));
+  for (const [name, { file, expected }] of Object.entries(quotedKeys)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Explicit keys', () => {
-  it('block explicit keys', () =>
-    assertParsesTo(read('block-collections--explicit-keys.yaml'), {
-      a: 1,
-      b: 2,
-    }));
+describe('An explicit key writes "?" before the key and ":" before its value', () => {
+  const explicitKeys = {
+    'keys with values': {
+      file: 'block-collections--explicit-keys.yaml',
+      expected: { a: 1, b: 2 },
+    },
+    'an empty key': {
+      file: 'block-collections--explicit-key-null.yaml',
+      expected: { '': 'value' },
+    },
+    'a key without a value as the last entry': {
+      file: 'block-collections--explicit-key-last-entry.yaml',
+      expected: { a: 1, b: null },
+    },
+    'a key without a value at the end of a nested mapping': {
+      file: 'block-collections--explicit-key-indented.yaml',
+      expected: { outer: { inner: null } },
+    },
+    'a value on the line after its ":"': {
+      file: 'block-collections--explicit-key-colon-newline.yaml',
+      expected: { a: 'val' },
+    },
+    'a lone "?" that ends the input': {
+      file: 'block-collections--explicit-key-bare-question.yaml',
+      expected: { '': null },
+    },
+    'a lone "?" that ends a nested mapping': {
+      file: 'block-collections--explicit-key-eof-nested.yaml',
+      expected: { a: { '': null } },
+    },
+  };
 
-  it('explicit key with no value', () =>
-    assertParsesTo(read('block-collections--explicit-key-no-value.yaml'), {
-      a: null,
-    }));
-
-  it('explicit key null key', () =>
-    assertParsesTo(read('block-collections--explicit-key-null.yaml'), {
-      '': 'value',
-    }));
-
-  it('explicit key as last entry in document', () =>
-    assertParsesTo(read('block-collections--explicit-key-last-entry.yaml'), {
-      a: 1,
-      b: null,
-    }));
-
-  it('explicit key at end of indented block', () =>
-    assertParsesTo(read('block-collections--explicit-key-indented.yaml'), {
-      outer: { inner: null },
-    }));
-
-  it('explicit key with colon-newline value', () =>
-    assertParsesTo(read('block-collections--explicit-key-colon-newline.yaml'), {
-      a: 'val',
-    }));
-
-  it('explicit key ? at very end of input', () =>
-    assertParsesTo(read('block-collections--explicit-key-bare-question.yaml'), {
-      '': null,
-    }));
-
-  it('nested explicit key at the end of input', () =>
-    assertParsesTo(read('block-collections--explicit-key-eof-nested.yaml'), {
-      a: { '': null },
-    }));
+  for (const [name, { file, expected }] of Object.entries(explicitKeys)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Empty values', () => {
-  it('empty map value', () =>
-    assertParsesTo(read('block-collections--empty-map-value.yaml'), {
-      a: null,
-      b: 2,
-    }));
+describe('An entry without a value holds null', () => {
+  const emptyValues = {
+    'a mapping value followed by another entry': {
+      file: 'block-collections--empty-map-value.yaml',
+      expected: { a: null, b: 2 },
+    },
+    'a sequence item followed by another item': {
+      file: 'block-collections--empty-seq-item.yaml',
+      expected: [null, 2],
+    },
+    'a mapping value followed only by a comment': {
+      file: 'block-collections--value-after-key-comment.yaml',
+      expected: { a: null },
+    },
+    'a mapping value that ends the input': {
+      file: 'block-collections--key-end-empty-value.yaml',
+      expected: { a: 1, b: null },
+    },
+    'a sequence item that ends the input': {
+      file: 'block-collections--seq-dash-eof.yaml',
+      expected: [null],
+    },
+    'a compact sequence item that ends the input': {
+      file: 'block-collections--inline-seq-dash-eof.yaml',
+      expected: [[null]],
+    },
+  };
 
-  it('empty sequence item', () =>
-    assertParsesTo(read('block-collections--empty-seq-item.yaml'), [null, 2]));
+  for (const [name, { file, expected }] of Object.entries(emptyValues)) {
+    it(`reads ${name} as null`, () => assertParsesTo(read(file), expected));
+  }
+});
 
-  it('value after key with only comments remaining', () =>
-    assertParsesTo(read('block-collections--value-after-key-comment.yaml'), {
-      a: null,
-    }));
+describe('Block collections nest by indentation', () => {
+  const nestedCollections = {
+    'a mapping of sequences': {
+      file: 'block-collections--map-of-sequences.yaml',
+      expected: {
+        american: ['Boston Red Sox', 'Detroit Tigers'],
+        national: ['New York Mets', 'Chicago Cubs'],
+      },
+    },
+    'mappings nested three levels deep': {
+      file: 'block-collections--deep-maps.yaml',
+      expected: { a: { b: { c: 'deep' } } },
+    },
+    'sequences of compact sequences': {
+      file: 'block-collections--block-sequences.yaml',
+      expected: [
+        [1, 2],
+        [3, 4],
+      ],
+    },
+    'a sequence between two mapping keys': {
+      file: 'block-collections--seq-between-map-keys.yaml',
+      expected: { a: 1, b: ['x', 'y'], c: 3 },
+    },
+    'a configuration of mappings and sequences': {
+      file: 'block-collections--real-world-config.yaml',
+      expected: {
+        name: 'my-project',
+        version: '1.0.0',
+        dependencies: [
+          { name: 'lodash', version: '4.17.21' },
+          { name: 'express', version: '4.18.2' },
+        ],
+        config: {
+          debug: true,
+          port: 3000,
+          host: '0.0.0.0',
+          features: ['auth', 'logging'],
+          database: { host: 'localhost', port: 5432, name: 'mydb' },
+        },
+      },
+    },
+  };
 
-  it('key at end with empty value', () =>
-    assertParsesTo(read('block-collections--key-end-empty-value.yaml'), {
-      a: 1,
-      b: null,
-    }));
-
-  it('sequence dash at the end of input without value', () =>
-    assertParsesTo(read('block-collections--seq-dash-eof.yaml'), [null]));
-
-  it('inline sequence dash at very end', () =>
-    assertParsesTo(read('block-collections--inline-seq-dash-eof.yaml'), [
-      [null],
-    ]));
+  for (const [name, { file, expected }] of Object.entries(nestedCollections)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
 describe('An empty nested value leaves the lines after it at their own level', () => {
@@ -237,73 +258,53 @@ describe('A block sequence may start at the indentation of its key', () => {
   }
 });
 
-describe('Compact values after a sequence entry', () => {
-  it('single-quoted inline', () =>
-    assertParsesTo(read('block-collections--seq-single-quoted.yaml'), [
-      'hello',
-    ]));
+describe('A sequence entry holds any node on its line or the lines below', () => {
+  const entries = {
+    'a single-quoted scalar': {
+      file: 'block-collections--seq-single-quoted.yaml',
+      expected: ['hello'],
+    },
+    'a double-quoted scalar': {
+      file: 'block-collections--seq-double-quoted.yaml',
+      expected: ['hello'],
+    },
+    'a flow sequence': {
+      file: 'block-collections--seq-flow-seq-inline.yaml',
+      expected: [[1, 2]],
+    },
+    'a flow mapping': {
+      file: 'block-collections--seq-flow-map-inline.yaml',
+      expected: [{ a: 1 }],
+    },
+    'a nested sequence whose items sit on the lines below': {
+      file: 'block-collections--inline-nested-seq.yaml',
+      expected: [['a', 'b']],
+    },
+    'a nested sequence whose item sits on the line below': {
+      file: 'block-collections--inline-seq-dash-newline.yaml',
+      expected: [['val']],
+    },
+    'a nested sequence holding a mapping on the line below': {
+      file: 'block-collections--dash-newline-map.yaml',
+      expected: [[{ a: 1 }]],
+    },
+    'a nested sequence with an empty item before the next entry': {
+      file: 'block-collections--dash-newline-no-continuation.yaml',
+      expected: [[null], 'b'],
+    },
+    'a nested sequence that ends the input': {
+      file: 'block-collections--inline-seq-item-eof.yaml',
+      expected: [['end']],
+    },
+    'a mapping whose value follows a tab': {
+      file: 'block-collections--inline-value-colon-tab.yaml',
+      expected: [{ a: 'b' }],
+    },
+  };
 
-  it('double-quoted inline', () =>
-    assertParsesTo(read('block-collections--seq-double-quoted.yaml'), [
-      'hello',
-    ]));
-
-  it('flow sequence inline', () =>
-    assertParsesTo(read('block-collections--seq-flow-seq-inline.yaml'), [
-      [1, 2],
-    ]));
-
-  it('flow map inline', () =>
-    assertParsesTo(read('block-collections--seq-flow-map-inline.yaml'), [
-      { a: 1 },
-    ]));
-
-  it('nested sequence item with value on next line', () =>
-    assertParsesTo(read('block-collections--inline-nested-seq.yaml'), [
-      ['a', 'b'],
-    ]));
-
-  it('inline sequence items with next-line values', () =>
-    assertParsesTo(read('block-collections--inline-seq-anchor.yaml'), [
-      [1, 1],
-    ]));
-
-  it('inline sequence dash then newline with indented value', () =>
-    assertParsesTo(read('block-collections--inline-seq-dash-newline.yaml'), [
-      ['val'],
-    ]));
-
-  it('dash newline then indented map', () =>
-    assertParsesTo(read('block-collections--dash-newline-map.yaml'), [
-      [{ a: 1 }],
-    ]));
-
-  it('dash newline with no indented continuation', () =>
-    assertParsesTo(
-      read('block-collections--dash-newline-no-continuation.yaml'),
-      [[null], 'b']
-    ));
-
-  it('inline sequence with two items same line', () =>
-    assertParsesTo(read('block-collections--inline-seq-two-items.yaml'), [
-      ['a', 'b'],
-    ]));
-
-  it('inline sequence item at the end of input', () =>
-    assertParsesTo(read('block-collections--inline-seq-item-eof.yaml'), [
-      ['end'],
-    ]));
-
-  it('sequence dash-newline then map at deeper indent', () =>
-    assertParsesTo(read('block-collections--seq-dash-newline-map.yaml'), [
-      { a: 1 },
-      { b: 2 },
-    ]));
-
-  it('inline value with colon-tab', () =>
-    assertParsesTo(read('block-collections--inline-value-colon-tab.yaml'), [
-      { a: 'b' },
-    ]));
+  for (const [name, { file, expected }] of Object.entries(entries)) {
+    it(`reads ${name} as an entry`, () => assertParsesTo(read(file), expected));
+  }
 });
 
 describe('Malformed block structure is rejected instead of dropped', () => {

@@ -4,33 +4,14 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 import {
   assertParsesTo,
+  parse,
+  parseAll,
   parseWithinTimeLimit,
   read,
 } from '../__helpers__/index.mts';
-
-const require = createRequire(import.meta.url);
-const { parse, parseAll } = require('../../src/index.ts');
-
-describe('Multiline plain scalars', () => {
-  it('folds newlines', () =>
-    assertParsesTo(
-      read('plain-scalars--plain-multiline-folds.yaml'),
-      'this is a multiline value'
-    ));
-
-  it('multiline ending at EOF', () =>
-    assertParsesTo(read('plain-scalars--plain-multiline-eof.yaml'), 'a b'));
-
-  it('multiline plain scalar ending at EOF after newline', () =>
-    assertParsesTo(
-      read('plain-scalars--plain-multiline-eof-newline.yaml'),
-      'hello world'
-    ));
-});
 
 describe('A multi-line plain scalar keeps its continuation lines', () => {
   const continuations = {
@@ -74,6 +55,10 @@ describe('A multi-line plain scalar keeps its continuation lines', () => {
       input: 'first\n  second\nthird\n',
       expected: 'first second third',
     },
+    'a top-level scalar that ends the input': {
+      input: read('plain-scalars--plain-multiline-folds.yaml'),
+      expected: 'this is a multiline value',
+    },
     'a flow sequence item': {
       input: 'k: [a\n  b]',
       expected: { k: ['a b'] },
@@ -110,48 +95,42 @@ describe('A continuation line must be indented with spaces past its owner', () =
     strict.throws(() => parse('key: [a,\nb]\n'), SyntaxError));
 });
 
-describe('Where a plain scalar ends', () => {
-  it('colon not followed by space is part of value', () =>
-    assertParsesTo(
-      read('plain-scalars--plain-colon-no-space.yaml'),
-      'http://example.com'
-    ));
+describe('A plain scalar ends only where an indicator can end it', () => {
+  const plainScalars = {
+    'a ":" without a space after it': {
+      file: 'plain-scalars--plain-colon-no-space.yaml',
+      expected: 'http://example.com',
+    },
+    'a ":" without a space after it in a flow mapping value': {
+      file: 'plain-scalars--flow-map-colon-value.yaml',
+      expected: { url: 'http://x.com' },
+    },
+    'a ":" followed by a tab in a flow sequence': {
+      file: 'plain-scalars--flow-colon-tab.yaml',
+      expected: ['a:\tb'],
+    },
+    'a ":" without a space after it in a sequence entry': {
+      file: 'plain-scalars--inline-colon-no-map.yaml',
+      expected: ['a:b'],
+    },
+    'spaces before a "," in a flow sequence': {
+      file: 'plain-scalars--flow-seq-plain-scalar.yaml',
+      expected: ['hello world', 'foo'],
+    },
+    'the text before a "]"': {
+      file: 'plain-scalars--flow-seq-plain-bracket.yaml',
+      expected: ['value'],
+    },
+    'a "?" without whitespace after it': {
+      file: 'plain-scalars--question-no-whitespace.yaml',
+      expected: '?abc',
+    },
+  };
 
-  it('colon in flow map value', () =>
-    assertParsesTo(read('plain-scalars--flow-map-colon-value.yaml'), {
-      url: 'http://x.com',
-    }));
-
-  it('colon followed by tab in flow is part of scalar', () =>
-    assertParsesTo(read('plain-scalars--flow-colon-tab.yaml'), ['a:\tb']));
-
-  it('inline value with colon-like content but no map value', () =>
-    assertParsesTo(read('plain-scalars--inline-colon-no-map.yaml'), ['a:b']));
-
-  it('plain scalar stops at colon with space', () =>
-    assertParsesTo(read('plain-scalars--plain-stops-at-colon-space.yaml'), {
-      key: 'val',
-    }));
-
-  it('plain scalar value ending at comma in flow seq', () =>
-    assertParsesTo(read('plain-scalars--flow-seq-plain-scalar.yaml'), [
-      'hello world',
-      'foo',
-    ]));
-
-  it('plain scalar value ending at bracket', () =>
-    assertParsesTo(read('plain-scalars--flow-seq-plain-bracket.yaml'), [
-      'value',
-    ]));
-
-  it('multiline plain scalar stops at ? indicator', () =>
-    assertParsesTo(read('plain-scalars--multiline-stops-at-question.yaml'), {
-      key1: 'val1',
-      key2: 'val2',
-    }));
-
-  it('question mark not followed by whitespace is plain scalar', () =>
-    assertParsesTo(read('plain-scalars--question-no-whitespace.yaml'), '?abc'));
+  for (const [name, { file, expected }] of Object.entries(plainScalars)) {
+    it(`keeps ${name} in the scalar`, () =>
+      assertParsesTo(read(file), expected));
+  }
 });
 
 describe('A plain scalar never starts with an indicator', () => {
@@ -175,13 +154,10 @@ describe('A plain scalar never starts with an indicator', () => {
     'a "-" and a tab in a flow sequence': '[ -\ta ]\n',
     'a "?" before a flow indicator': '{ ?}\n',
     'a "%" line inside a document': '%YAML 1.2\n---\n%YAML 1.2\n---\n',
+    'a "-" alone as a flow mapping value': read(
+      'plain-scalars--bare-minus-flow-value.yaml'
+    ),
   };
-
-  for (const [name, input] of Object.entries(indicatorStarts)) {
-    it(`rejects ${name}`, () =>
-      strict.throws(() => parseAll(input), SyntaxError));
-  }
-
   const textAfterIndicators = {
     'a "-" before a digit': { input: 'key: -1\n', expected: { key: -1 } },
     'a "-" before a letter': { input: 'key: -x\n', expected: { key: '-x' } },
@@ -192,30 +168,15 @@ describe('A plain scalar never starts with an indicator', () => {
     },
   };
 
+  for (const [name, input] of Object.entries(indicatorStarts)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
+
   for (const [name, { input, expected }] of Object.entries(
     textAfterIndicators
   )) {
     it(`reads ${name} as text`, () => strict.deepEqual(parse(input), expected));
-  }
-});
-
-describe('A key can be empty before its ":"', () => {
-  const emptyKeys = {
-    'a block mapping': { input: ': value\n', expected: { '': 'value' } },
-    'a flow mapping': { input: '{ : value }\n', expected: { '': 'value' } },
-    'a flow mapping with the value on the next line': {
-      input: '{ :\n  value }\n',
-      expected: { '': 'value' },
-    },
-    'an explicit key holding only a comment': {
-      input: '? # note\n: value\n',
-      expected: { '': 'value' },
-    },
-  };
-
-  for (const [name, { input, expected }] of Object.entries(emptyKeys)) {
-    it(`reads the empty key of ${name}`, () =>
-      strict.deepEqual(parse(input), expected));
   }
 });
 

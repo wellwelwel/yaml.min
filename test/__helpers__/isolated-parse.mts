@@ -2,7 +2,9 @@ import { createRequire } from 'node:module';
 import { parentPort } from 'node:worker_threads';
 
 const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+const {
+  parse,
+}: typeof import('../../src/index.ts') = require('../../src/index.ts');
 
 const describeOutcome = (input: string): string => {
   try {

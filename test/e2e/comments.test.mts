@@ -5,39 +5,41 @@
  * and from the https://github.com/yaml/yaml-test-suite cases 9JBA, CVW2, and SU5Z (MIT).
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+describe('A comment is left out of the value it follows', () => {
+  const commentedDocuments = {
+    'a comment line before the content': {
+      file: 'comments--comment-before.yaml',
+      expected: { a: 1 },
+    },
+    'a comment line between mapping entries': {
+      file: 'comments--comment-between.yaml',
+      expected: { a: 1, b: 2 },
+    },
+    'a comment line after the last sequence item': {
+      file: 'comments--seq-trailing-comment.yaml',
+      expected: ['a', 'b'],
+    },
+    'a comment after a top-level plain scalar': {
+      file: 'comments--plain-value-comment.yaml',
+      expected: 'hello',
+    },
+    'a comment after a sequence item': {
+      file: 'comments--inline-value-comment.yaml',
+      expected: ['val'],
+    },
+    'a comment after an explicit key': {
+      file: 'comments--explicit-key-comment.yaml',
+      expected: { k: 'val' },
+    },
+  };
 
-describe('Comments', () => {
-  it('before content', () =>
-    assertParsesTo(read('comments--comment-before.yaml'), { a: 1 }));
-
-  it('inline', () =>
-    assertParsesTo(read('comments--comment-inline.yaml'), { a: 1 }));
-
-  it('between entries', () =>
-    assertParsesTo(read('comments--comment-between.yaml'), { a: 1, b: 2 }));
-
-  it('seq ending with trailing comment', () =>
-    assertParsesTo(read('comments--seq-trailing-comment.yaml'), ['a', 'b']));
-
-  it('map key with comment in value', () =>
-    assertParsesTo(read('comments--map-key-comment.yaml'), { key: 'val' }));
-
-  it('keeps only the text before the comment', () =>
-    assertParsesTo(read('comments--plain-value-comment.yaml'), 'hello'));
-
-  it('inline value with comment', () =>
-    assertParsesTo(read('comments--inline-value-comment.yaml'), ['val']));
-
-  it('explicit key with comment after key', () =>
-    assertParsesTo(read('comments--explicit-key-comment.yaml'), {
-      k: 'val',
-    }));
+  for (const [name, { file, expected }] of Object.entries(commentedDocuments)) {
+    it(`reads the document around ${name}`, () =>
+      assertParsesTo(read(file), expected));
+  }
 });
 
 describe('A comment line never moves the lines after it to another level', () => {
@@ -67,29 +69,36 @@ describe('A comment line never moves the lines after it to another level', () =>
   }
 });
 
-describe('A comment after a tab', () => {
-  it('inline comment after tab', () =>
-    assertParsesTo(read('comments--inline-comment-after-tab.yaml'), {
-      a: 1,
-    }));
+describe('A tab can separate a comment from the value before it', () => {
+  const tabSeparatedComments = {
+    'a mapping value': {
+      file: 'comments--inline-comment-after-tab.yaml',
+      expected: { a: 1 },
+    },
+    'a sequence item': {
+      file: 'comments--plain-tab-comment.yaml',
+      expected: ['val'],
+    },
+    'a nested mapping value': {
+      file: 'comments--plain-key-tab-comment-nested.yaml',
+      expected: { a: { k: 'val' } },
+    },
+    'a nested plain scalar on its own line': {
+      file: 'comments--unquoted-tab-comment-nested.yaml',
+      expected: { a: 'hello' },
+    },
+    'an explicit key': {
+      file: 'comments--explicit-key-tab-comment.yaml',
+      expected: { key: 'val' },
+    },
+  };
 
-  it('sequence entry with a tab before its comment', () =>
-    assertParsesTo(read('comments--plain-tab-comment.yaml'), ['val']));
-
-  it('nested plain key with a tab before its comment', () =>
-    assertParsesTo(read('comments--plain-key-tab-comment-nested.yaml'), {
-      a: { k: 'val' },
-    }));
-
-  it('nested plain value with a tab before its comment', () =>
-    assertParsesTo(read('comments--unquoted-tab-comment-nested.yaml'), {
-      a: 'hello',
-    }));
-
-  it('explicit key with tab before comment in map key', () =>
-    assertParsesTo(read('comments--explicit-key-tab-comment.yaml'), {
-      key: 'val',
-    }));
+  for (const [name, { file, expected }] of Object.entries(
+    tabSeparatedComments
+  )) {
+    it(`reads ${name} followed by a tab and a comment`, () =>
+      assertParsesTo(read(file), expected));
+  }
 });
 
 describe('A comment needs a space or a tab before its "#"', () => {

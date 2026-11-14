@@ -5,132 +5,115 @@
  * and from the https://github.com/yaml/yaml-test-suite cases CT4Q and T833 (MIT).
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 import {
   assertParsesTo,
+  parse,
   parseWithinTimeLimit,
   read,
 } from '../__helpers__/index.mts';
 
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+describe('A flow sequence lists its items between brackets', () => {
+  const flowSequences = {
+    'an empty sequence': {
+      file: 'flow-collections--flow-seq-empty.yaml',
+      expected: [],
+    },
+    'a sequence of integers': {
+      file: 'flow-collections--flow-seq-integers.yaml',
+      expected: [1, 2, 3],
+    },
+    'a sequence of booleans and null': {
+      file: 'flow-collections--flow-seq-mixed.yaml',
+      expected: [true, false, null],
+    },
+    'a sequence of quoted and plain strings': {
+      file: 'flow-collections--flow-seq-strings.yaml',
+      expected: ['a', 'b', 'c'],
+    },
+    'a nested sequence': {
+      file: 'flow-collections--flow-seq-nested.yaml',
+      expected: [1, [2, 3]],
+    },
+    'a sequence with a trailing comma': {
+      file: 'flow-collections--flow-seq-trailing-comma.yaml',
+      expected: ['one', 'two'],
+    },
+    'a sequence as a block mapping value': {
+      file: 'flow-collections--mixed-flow-seq-in-block.yaml',
+      expected: { items: [1, 2, 3], name: 'test' },
+    },
+  };
 
-describe('Flow sequences', () => {
-  it('empty', () =>
-    assertParsesTo(read('flow-collections--flow-seq-empty.yaml'), []));
-
-  it('integers', () =>
-    assertParsesTo(
-      read('flow-collections--flow-seq-integers.yaml'),
-      [1, 2, 3]
-    ));
-
-  it('mixed types', () =>
-    assertParsesTo(read('flow-collections--flow-seq-mixed.yaml'), [
-      true,
-      false,
-      null,
-    ]));
-
-  it('strings', () =>
-    assertParsesTo(read('flow-collections--flow-seq-strings.yaml'), [
-      'a',
-      'b',
-      'c',
-    ]));
-
-  it('nested', () =>
-    assertParsesTo(read('flow-collections--flow-seq-nested.yaml'), [
-      1,
-      [2, 3],
-    ]));
-
-  it('trailing comma', () =>
-    assertParsesTo(read('flow-collections--flow-seq-trailing-comma.yaml'), [
-      'one',
-      'two',
-    ]));
+  for (const [name, { file, expected }] of Object.entries(flowSequences)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Flow mappings', () => {
-  it('empty', () =>
-    assertParsesTo(read('flow-collections--flow-map-empty.yaml'), {}));
+describe('A flow mapping lists its entries between braces', () => {
+  const flowMappings = {
+    'an empty mapping': {
+      file: 'flow-collections--flow-map-empty.yaml',
+      expected: {},
+    },
+    'a mapping of integers': {
+      file: 'flow-collections--flow-map-simple.yaml',
+      expected: { a: 1, b: 2 },
+    },
+    'a nested mapping': {
+      file: 'flow-collections--flow-map-nested.yaml',
+      expected: { a: 1, b: { c: 3 } },
+    },
+    'a mapping with spaces around its indicators and a trailing comma': {
+      file: 'flow-collections--flow-map-spaces.yaml',
+      expected: { one: 'two', three: 'four' },
+    },
+    'a single-quoted key': {
+      file: 'flow-collections--flow-map-single-quoted-key.yaml',
+      expected: { 'a b': 1 },
+    },
+    'a double-quoted key': {
+      file: 'flow-collections--flow-map-double-quoted-key.yaml',
+      expected: { 'a b': 1 },
+    },
+    'a key without a value as the last entry': {
+      file: 'flow-collections--flow-map-key-no-value.yaml',
+      expected: { a: 1, b: null },
+    },
+    'a mapping as a block mapping value': {
+      file: 'flow-collections--mixed-flow-map-in-block.yaml',
+      expected: { meta: { a: 1, b: 2 }, name: 'test' },
+    },
+  };
 
-  it('simple', () =>
-    assertParsesTo(read('flow-collections--flow-map-simple.yaml'), {
-      a: 1,
-      b: 2,
-    }));
-
-  it('nested', () =>
-    assertParsesTo(read('flow-collections--flow-map-nested.yaml'), {
-      a: 1,
-      b: { c: 3 },
-    }));
-
-  it('with spaces', () =>
-    assertParsesTo(read('flow-collections--flow-map-spaces.yaml'), {
-      one: 'two',
-      three: 'four',
-    }));
-
-  it('single-quoted key', () =>
-    assertParsesTo(read('flow-collections--flow-map-single-quoted-key.yaml'), {
-      'a b': 1,
-    }));
-
-  it('double-quoted key', () =>
-    assertParsesTo(read('flow-collections--flow-map-double-quoted-key.yaml'), {
-      'a b': 1,
-    }));
-
-  it('flow map key with no value before brace', () =>
-    assertParsesTo(read('flow-collections--flow-map-key-no-value.yaml'), {
-      a: 1,
-      b: null,
-    }));
+  for (const [name, { file, expected }] of Object.entries(flowMappings)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Implicit pairs in flow sequences', () => {
-  it('implicit pair', () =>
-    assertParsesTo(read('flow-collections--flow-seq-implicit-pair.yaml'), [
-      { foo: 'bar' },
-    ]));
+describe('A "key: value" item of a flow sequence is a single-pair mapping', () => {
+  const implicitPairs = {
+    'a key and a value': {
+      file: 'flow-collections--flow-seq-implicit-pair.yaml',
+      expected: [{ foo: 'bar' }],
+    },
+    'a key without a value before a comma and a space': {
+      file: 'flow-collections--flow-key-comma.yaml',
+      expected: [{ a: null }, 'b'],
+    },
+    'a key without a value before the closing bracket': {
+      file: 'flow-collections--flow-implicit-key-bracket.yaml',
+      expected: [{ a: null }],
+    },
+    'a key without a value right before a comma': {
+      file: 'flow-collections--flow-implicit-key-comma.yaml',
+      expected: [{ a: null }, 'b'],
+    },
+  };
 
-  it('key: , in flow sequence', () =>
-    assertParsesTo(read('flow-collections--flow-key-comma.yaml'), [
-      { a: null },
-      'b',
-    ]));
-
-  it('key: at end of flow sequence', () =>
-    assertParsesTo(read('flow-collections--flow-key-end.yaml'), [{ a: 1 }]));
-
-  it('implicit key in flow sequence colon then bracket', () =>
-    assertParsesTo(read('flow-collections--flow-implicit-key-bracket.yaml'), [
-      { a: null },
-    ]));
-
-  it('implicit key in flow sequence colon-comma', () =>
-    assertParsesTo(read('flow-collections--flow-implicit-key-comma.yaml'), [
-      { a: null },
-      'b',
-    ]));
-});
-
-describe('Mixed flow and block', () => {
-  it('flow sequence in block map', () =>
-    assertParsesTo(read('flow-collections--mixed-flow-seq-in-block.yaml'), {
-      items: [1, 2, 3],
-      name: 'test',
-    }));
-
-  it('flow map in block map', () =>
-    assertParsesTo(read('flow-collections--mixed-flow-map-in-block.yaml'), {
-      meta: { a: 1, b: 2 },
-      name: 'test',
-    }));
+  for (const [name, { file, expected }] of Object.entries(implicitPairs)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
 await describe('A flow collection only closes with its own bracket', async () => {
@@ -209,7 +192,7 @@ describe('Explicit single pairs in flow sequences', () => {
   it('counts as a nesting level', () => {
     const input = '[ ? a : x ]';
 
-    strict.doesNotThrow(() => parse(input, { maxDepth: 2 }));
+    strict.deepEqual(parse(input, { maxDepth: 2 }), [{ a: 'x' }]);
     strict.throws(() => parse(input, { maxDepth: 1 }), {
       code: 'NESTING_TOO_DEEP',
     });

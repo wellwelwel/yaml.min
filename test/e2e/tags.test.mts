@@ -1,14 +1,10 @@
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo } from '../__helpers__/index.mts';
+import { assertParsesTo, parse, parseAll } from '../__helpers__/index.mts';
 
 type ScalarForm = {
   document: (tag: string, text: string) => string;
   parsed: (value: unknown) => unknown;
 };
-
-const require = createRequire(import.meta.url);
-const { parse, parseAll } = require('../../src/index.ts');
 
 describe('A core tag resolves a scalar by its own rule', () => {
   const taggedScalars: [string, string, unknown][] = [

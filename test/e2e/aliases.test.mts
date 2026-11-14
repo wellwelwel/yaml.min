@@ -4,16 +4,17 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import {
+  assertParsesTo,
+  parse,
+  parseAll,
+  read,
+} from '../__helpers__/index.mts';
 
 type Settings = { host: string; origins: string[] };
 
 type SharedConfig = { defaults: Settings; production: Settings };
-
-const require = createRequire(import.meta.url);
-const { parse, parseAll } = require('../../src/index.ts');
 
 const SHARED_CONFIG_DOCUMENT =
   'defaults: &defaults\n  host: localhost\n  origins: [a.example]\nproduction: *defaults\n';
@@ -40,13 +41,13 @@ describe('An alias resolves to the value its anchor labels', () => {
       file: 'aliases--inline-alias-after-dash.yaml',
       expected: [10, [10]],
     },
+    'an alias to an anchor in the same compact nested sequence': {
+      file: 'aliases--anchor-in-compact-sequence.yaml',
+      expected: [[1, 1]],
+    },
     'an alias to a number in a flow sequence': {
       file: 'aliases--anchor-flow-seq.yaml',
       expected: [1, 1],
-    },
-    'an alias to a string in a flow sequence': {
-      file: 'aliases--anchor-flow-seq-string.yaml',
-      expected: ['hello', 'hello'],
     },
     'an alias to a flow mapping key': {
       file: 'aliases--anchor-flow-map-key.yaml',
@@ -78,6 +79,55 @@ describe('An anchor leaves the value it labels unchanged', () => {
   for (const [name, { file, expected }] of Object.entries(anchoredDocuments)) {
     it(`keeps the value of an anchored ${name}`, () =>
       assertParsesTo(read(file), expected));
+  }
+});
+
+describe('An anchor labels the implicit key on its line, not the mapping', () => {
+  const keyAnchors = {
+    'a top-level mapping': {
+      input: '&a key: value\nother: *a\n',
+      expected: { key: 'value', other: 'key' },
+    },
+    'a nested mapping': {
+      input: 'outer:\n  &a key: value\nnext: *a\n',
+      expected: { outer: { key: 'value' }, next: 'key' },
+    },
+    'a mapping in a sequence entry': {
+      input: '- &a key: value\n- *a\n',
+      expected: [{ key: 'value' }, 'key'],
+    },
+    'a mapping in a nested sequence entry': {
+      input: '- - &a key: value\n- *a\n',
+      expected: [[{ key: 'value' }], 'key'],
+    },
+    'a mapping in an explicit value': {
+      input: '? a\n: &a key: value\nb: *a\n',
+      expected: { a: { key: 'value' }, b: 'key' },
+    },
+    'a single-pair mapping in a flow sequence': {
+      input: '[&a key: value, *a]',
+      expected: [{ key: 'value' }, 'key'],
+    },
+  };
+  const mappingAnchors = {
+    'a nested mapping': {
+      input: 'outer:\n  &m\n  key: value\nnext: *m\n',
+      expected: { outer: { key: 'value' }, next: { key: 'value' } },
+    },
+    'a mapping in a sequence entry': {
+      input: '- &m\n  key: value\n- *m\n',
+      expected: [{ key: 'value' }, { key: 'value' }],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(keyAnchors)) {
+    it(`labels the first key of ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(mappingAnchors)) {
+    it(`labels ${name} when a line break follows the anchor`, () =>
+      assertParsesTo(input, expected));
   }
 });
 
@@ -219,7 +269,7 @@ describe('An alias returns the anchored value itself, not a copy', () => {
 
   for (const [name, input] of Object.entries(sharedValues)) {
     it(`shares ${name}`, () => {
-      const [original, copy] = Object.values(parse(input));
+      const [original, copy] = Object.values(parse(input) as object);
 
       strict.equal(copy, original);
     });
@@ -244,7 +294,7 @@ describe('A collection an alias refers to can no longer change', () => {
 
   for (const [name, change] of Object.entries(changes)) {
     it(`rejects a change to ${name}`, () => {
-      const config: SharedConfig = parse(SHARED_CONFIG_DOCUMENT);
+      const config = parse(SHARED_CONFIG_DOCUMENT) as SharedConfig;
 
       strict.throws(() => change(config), TypeError);
       strict.deepEqual(config, {
@@ -255,10 +305,10 @@ describe('A collection an alias refers to can no longer change', () => {
   }
 
   it('rejects a change to a collection held under a key named after a built-in member', () => {
-    const config: { production: { constructor: string[] } } = parse(
+    const config = parse(
       'defaults: &defaults\n  constructor: [a.example]\nproduction: *defaults\n',
       { allowUnsafeKeys: true }
-    );
+    ) as { production: { constructor: string[] } };
 
     strict.throws(
       () => config.production.constructor.push('localhost'),
@@ -270,9 +320,9 @@ describe('A collection an alias refers to can no longer change', () => {
 
 describe('A collection no alias refers to stays changeable', () => {
   it('lets code change an anchored collection no alias refers to', () => {
-    const config: { staging: Settings } = parse(
+    const config = parse(
       'staging: &staging\n  host: localhost\n  origins: [a.example]\n'
-    );
+    ) as { staging: Settings };
 
     config.staging.host = 'staging.example';
     config.staging.origins.push('localhost');
@@ -283,7 +333,7 @@ describe('A collection no alias refers to stays changeable', () => {
   });
 
   it('lets code replace an alias in the collection that holds it', () => {
-    const config: SharedConfig = parse(SHARED_CONFIG_DOCUMENT);
+    const config = parse(SHARED_CONFIG_DOCUMENT) as SharedConfig;
 
     config.production = { host: 'example.com', origins: [] };
 

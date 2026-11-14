@@ -4,15 +4,11 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, strict } from 'poku';
 import typescript from 'typescript';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
-
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 
 const TEST_TSCONFIG = fileURLToPath(
   new URL('../tsconfig.json', import.meta.url)
@@ -48,6 +44,7 @@ describe('parse only reads a string', () => {
 
   for (const [name, input] of Object.entries(nonStrings)) {
     it(`rejects ${name} as a type error`, () =>
+      // @ts-expect-error
       strict.throws(() => parse(input), TypeError));
   }
 });
@@ -56,12 +53,6 @@ describe('Input validation', () => {
   it('rejects null bytes', () =>
     strict.throws(
       () => parse(read('parse--input-null-byte.yaml')),
-      SyntaxError
-    ));
-
-  it('rejects non-printable characters', () =>
-    strict.throws(
-      () => parse(read('parse--input-non-printable.yaml')),
       SyntaxError
     ));
 

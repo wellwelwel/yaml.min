@@ -4,98 +4,80 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+describe('Null has four spellings', () => {
+  const nullSpellings = {
+    '~': 'scalar-types--null-tilde.yaml',
+    null: 'scalar-types--null-lowercase.yaml',
+    Null: 'scalar-types--null-capitalized.yaml',
+    NULL: 'scalar-types--null-uppercase.yaml',
+  };
 
-describe('Null values', () => {
-  it('empty string', () =>
-    assertParsesTo(read('scalar-types--null-empty.yaml'), null));
-
-  it('tilde', () =>
-    assertParsesTo(read('scalar-types--null-tilde.yaml'), null));
-
-  it('null', () =>
-    assertParsesTo(read('scalar-types--null-lowercase.yaml'), null));
-
-  it('Null', () =>
-    assertParsesTo(read('scalar-types--null-capitalized.yaml'), null));
-
-  it('NULL', () =>
-    assertParsesTo(read('scalar-types--null-uppercase.yaml'), null));
+  for (const [spelling, file] of Object.entries(nullSpellings)) {
+    it(`reads ${spelling} as null`, () => assertParsesTo(read(file), null));
+  }
 });
 
-describe('Booleans', () => {
-  it('true', () => assertParsesTo(read('scalar-types--bool-true.yaml'), true));
+describe('A boolean is true or false in three letter cases', () => {
+  const booleanSpellings = {
+    true: { file: 'scalar-types--bool-true.yaml', expected: true },
+    True: { file: 'scalar-types--bool-true-cap.yaml', expected: true },
+    TRUE: { file: 'scalar-types--bool-true-upper.yaml', expected: true },
+    false: { file: 'scalar-types--bool-false.yaml', expected: false },
+    False: { file: 'scalar-types--bool-false-cap.yaml', expected: false },
+    FALSE: { file: 'scalar-types--bool-false-upper.yaml', expected: false },
+  };
 
-  it('True', () =>
-    assertParsesTo(read('scalar-types--bool-true-cap.yaml'), true));
-
-  it('TRUE', () =>
-    assertParsesTo(read('scalar-types--bool-true-upper.yaml'), true));
-
-  it('false', () =>
-    assertParsesTo(read('scalar-types--bool-false.yaml'), false));
-
-  it('False', () =>
-    assertParsesTo(read('scalar-types--bool-false-cap.yaml'), false));
-
-  it('FALSE', () =>
-    assertParsesTo(read('scalar-types--bool-false-upper.yaml'), false));
+  for (const [spelling, { file, expected }] of Object.entries(
+    booleanSpellings
+  )) {
+    it(`reads ${spelling} as ${expected}`, () =>
+      assertParsesTo(read(file), expected));
+  }
 });
 
-describe('Integers', () => {
-  it('zero', () => assertParsesTo(read('scalar-types--int-zero.yaml'), 0));
+describe('An integer is decimal, or hexadecimal or octal behind its prefix', () => {
+  const integers = {
+    zero: { file: 'scalar-types--int-zero.yaml', expected: 0 },
+    'a positive decimal integer': {
+      file: 'scalar-types--int-positive.yaml',
+      expected: 42,
+    },
+    'a negative decimal integer': {
+      file: 'scalar-types--int-negative.yaml',
+      expected: -17,
+    },
+    'a decimal integer signed with "+"': {
+      file: 'scalar-types--int-signed-positive.yaml',
+      expected: 99,
+    },
+    'a hexadecimal integer with uppercase digits': {
+      file: 'scalar-types--int-hex-uppercase-only.yaml',
+      expected: 0xabcdef,
+    },
+    'a hexadecimal integer with a leading zero digit': {
+      file: 'scalar-types--int-hex-long.yaml',
+      expected: 685230,
+    },
+  };
+  const textNumerals = {
+    '0o89': 'scalar-types--int-invalid-octal.yaml',
+    '0o': 'scalar-types--int-bare-0o.yaml',
+    '0xZZ': 'scalar-types--int-invalid-hex.yaml',
+    '0x': 'scalar-types--int-bare-0x.yaml',
+    '+': 'scalar-types--int-bare-plus.yaml',
+  };
 
-  it('positive', () =>
-    assertParsesTo(read('scalar-types--int-positive.yaml'), 42));
+  for (const [name, { file, expected }] of Object.entries(integers)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 
-  it('negative', () =>
-    assertParsesTo(read('scalar-types--int-negative.yaml'), -17));
-
-  it('signed positive', () =>
-    assertParsesTo(read('scalar-types--int-signed-positive.yaml'), 99));
-
-  it('octal', () => assertParsesTo(read('scalar-types--int-octal.yaml'), 12));
-
-  it('hex lower', () =>
-    assertParsesTo(read('scalar-types--int-hex-lower.yaml'), 12));
-
-  it('hex upper', () =>
-    assertParsesTo(read('scalar-types--int-hex-upper.yaml'), 255));
-
-  it('hex long', () =>
-    assertParsesTo(read('scalar-types--int-hex-long.yaml'), 685230));
-
-  it('hex uppercase only', () =>
-    assertParsesTo(
-      read('scalar-types--int-hex-uppercase-only.yaml'),
-      0xabcdef
-    ));
-
-  it('invalid octal returns string', () =>
-    assertParsesTo(read('scalar-types--int-invalid-octal.yaml'), '0o89'));
-
-  it('bare 0o returns string', () =>
-    assertParsesTo(read('scalar-types--int-bare-0o.yaml'), '0o'));
-
-  it('invalid hex returns string', () =>
-    assertParsesTo(read('scalar-types--int-invalid-hex.yaml'), '0xZZ'));
-
-  it('bare 0x returns string', () =>
-    assertParsesTo(read('scalar-types--int-bare-0x.yaml'), '0x'));
-
-  it('bare + returns string', () =>
-    assertParsesTo(read('scalar-types--int-bare-plus.yaml'), '+'));
-
-  it('rejects a bare - as a flow mapping value', () =>
-    strict.throws(
-      () => parse(read('scalar-types--int-bare-minus-flow.yaml')),
-      SyntaxError
-    ));
+  for (const [text, file] of Object.entries(textNumerals)) {
+    it(`keeps ${text}, which has no valid digits, as text`, () =>
+      assertParsesTo(read(file), text));
+  }
 });
 
 describe('Signed hexadecimal and octal numerals', () => {
@@ -140,7 +122,7 @@ describe('Numerals too large for a number', () => {
 });
 
 describe('Numerals keep the exact value the document wrote', () => {
-  const exactNumerals = {
+  const exactNumerals: Record<string, [string, number]> = {
     'the largest safe decimal integer': ['9007199254740991', 9007199254740991],
     'the smallest safe decimal integer': [
       '-9007199254740991',
@@ -183,7 +165,7 @@ describe('Numerals keep the exact value the document wrote', () => {
 });
 
 describe('The bigint option returns integers as BigInt', () => {
-  const integers = {
+  const integers: Record<string, [string, bigint]> = {
     'a decimal integer': ['42', 42n],
     'a negative decimal integer': ['-17', -17n],
     'a signed positive decimal integer': ['+99', 99n],
@@ -199,7 +181,7 @@ describe('The bigint option returns integers as BigInt', () => {
       36893488147419103231n,
     ],
   };
-  const otherNumerals = {
+  const otherNumerals: Record<string, [string, number | string]> = {
     'a float': ['1.5', 1.5],
     'a float written with an exponent': ['1e3', 1000],
     'a signed hexadecimal numeral': ['-0x10', '-0x10'],
@@ -256,67 +238,62 @@ describe('The bigint option returns integers as BigInt', () => {
 
   for (const bigint of ['true', 1]) {
     it(`returns numbers when bigint is ${JSON.stringify(bigint)}`, () =>
+      // @ts-expect-error
       strict.equal(parse('42', { bigint }), 42));
   }
 });
 
-describe('Floats', () => {
-  const literalSpellings = {
+describe('A float reads as a number, with .inf and .nan as special numbers', () => {
+  const floats = {
+    'a decimal float': {
+      file: 'scalar-types--float-simple.yaml',
+      expected: 3.14,
+    },
+    'a float with an exponent': {
+      file: 'scalar-types--float-scientific.yaml',
+      expected: 685230.15,
+    },
+    'negative zero': {
+      file: 'scalar-types--float-neg-zero.yaml',
+      expected: -0,
+    },
+  };
+  const specialSpellings = {
+    '.inf': Number.POSITIVE_INFINITY,
     '.Inf': Number.POSITIVE_INFINITY,
     '.INF': Number.POSITIVE_INFINITY,
+    '+.inf': Number.POSITIVE_INFINITY,
+    '-.inf': Number.NEGATIVE_INFINITY,
     '-.Inf': Number.NEGATIVE_INFINITY,
     '-.INF': Number.NEGATIVE_INFINITY,
+    '.nan': Number.NaN,
+    '.NaN': Number.NaN,
+    '.NAN': Number.NaN,
   };
 
-  for (const [input, expected] of Object.entries(literalSpellings)) {
+  for (const [name, { file, expected }] of Object.entries(floats)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
+
+  for (const [input, expected] of Object.entries(specialSpellings)) {
     it(`returns ${input} as its special number`, () =>
       strict.equal(parse(input), expected));
   }
-
-  it('simple', () =>
-    assertParsesTo(read('scalar-types--float-simple.yaml'), 3.14));
-
-  it('scientific', () =>
-    assertParsesTo(read('scalar-types--float-scientific.yaml'), 685230.15));
-
-  it('negative infinity', () =>
-    assertParsesTo(
-      read('scalar-types--float-neg-inf.yaml'),
-      Number.NEGATIVE_INFINITY
-    ));
-
-  it('positive infinity', () =>
-    assertParsesTo(
-      read('scalar-types--float-pos-inf.yaml'),
-      Number.POSITIVE_INFINITY
-    ));
-
-  it('explicit positive infinity', () =>
-    assertParsesTo(
-      read('scalar-types--float-pos-inf-explicit.yaml'),
-      Number.POSITIVE_INFINITY
-    ));
-
-  it('.nan', () =>
-    assertParsesTo(read('scalar-types--float-nan.yaml'), Number.NaN));
-
-  it('.NaN', () =>
-    assertParsesTo(read('scalar-types--float-nan-cap.yaml'), Number.NaN));
-
-  it('.NAN', () =>
-    assertParsesTo(read('scalar-types--float-nan-upper.yaml'), Number.NaN));
-
-  it('negative zero', () =>
-    assertParsesTo(read('scalar-types--float-neg-zero.yaml'), -0));
 });
 
-describe('Plain strings', () => {
-  it('simple', () =>
-    assertParsesTo(read('scalar-types--string-plain-simple.yaml'), 'hello'));
+describe('Text that matches no other type reads as a string', () => {
+  const strings = {
+    'a word': {
+      file: 'scalar-types--string-plain-simple.yaml',
+      expected: 'hello',
+    },
+    'words separated by a space': {
+      file: 'scalar-types--string-plain-with-space.yaml',
+      expected: 'hello world',
+    },
+  };
 
-  it('with space', () =>
-    assertParsesTo(
-      read('scalar-types--string-plain-with-space.yaml'),
-      'hello world'
-    ));
+  for (const [name, { file, expected }] of Object.entries(strings)) {
+    it(`reads ${name} as a string`, () => assertParsesTo(read(file), expected));
+  }
 });

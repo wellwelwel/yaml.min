@@ -6,7 +6,11 @@ import { Worker } from 'node:worker_threads';
 import { strict } from 'poku';
 
 const require = createRequire(import.meta.url);
-const { parse: parseYaml } = require('../../src/index.ts');
+export const {
+  parse,
+  parseAll,
+  YamlError,
+}: typeof import('../../src/index.ts') = require('../../src/index.ts');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -17,7 +21,7 @@ export const read = (name: string): string =>
   readFileSync(join(__dirname, '..', '__snapshots__', name), 'utf8');
 
 export const assertParsesTo = (input: string, expected: unknown): void => {
-  const actual = parseYaml(input);
+  const actual = parse(input);
 
   strict.deepEqual(actual, expected);
 };

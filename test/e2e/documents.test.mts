@@ -4,12 +4,13 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
-
-const require = createRequire(import.meta.url);
-const { parse, parseAll } = require('../../src/index.ts');
+import {
+  assertParsesTo,
+  parse,
+  parseAll,
+  read,
+} from '../__helpers__/index.mts';
 
 describe('Document markers frame a document', () => {
   const framedDocuments = {
@@ -35,6 +36,7 @@ describe('Document markers frame a document', () => {
 
 describe('A document without content is null', () => {
   const emptyDocuments = {
+    'an empty input': 'documents--empty-input.yaml',
     'only a start marker': 'documents--doc-start-only.yaml',
     'a start marker and a line break':
       'documents--doc-start-trailing-newline.yaml',
@@ -51,7 +53,7 @@ describe('A document without content is null', () => {
 describe('An end marker line holds nothing but the marker and a comment', () => {
   it('rejects text after an end marker on the same line', () =>
     strict.throws(
-      () => parse(read('documents--doc-end-trailing-comment.yaml')),
+      () => parse(read('documents--doc-end-trailing-text.yaml')),
       SyntaxError
     ));
 });
@@ -168,22 +170,17 @@ describe('A block collection never starts on the "---" line', () => {
     'a block sequence': '--- - a\n',
     'an explicit key': '--- ? a\n',
   };
-
-  for (const [name, input] of Object.entries(markerLineCollections)) {
-    it(`rejects ${name} on the marker line`, () =>
-      strict.throws(() => parseAll(input), SyntaxError));
-  }
-
   const markerLineNodes = {
     'a plain scalar': { input: '--- text\n', expected: 'text' },
     'a flow sequence': { input: '--- [a, b]\n', expected: ['a', 'b'] },
     'a flow mapping': { input: '--- {a: b}\n', expected: { a: 'b' } },
     'a block scalar': { input: '--- |\n  text\n', expected: 'text\n' },
-    'a tag for the mapping below it': {
-      input: '--- !!map\na: b\n',
-      expected: { a: 'b' },
-    },
   };
+
+  for (const [name, input] of Object.entries(markerLineCollections)) {
+    it(`rejects ${name} on the marker line`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
 
   for (const [name, { input, expected }] of Object.entries(markerLineNodes)) {
     it(`reads ${name} on the marker line`, () =>
@@ -215,12 +212,6 @@ describe('A %YAML directive names one YAML 1 version', () => {
     'a version other than 1': '%YAML 2.0\n---\n',
     'no version': '%YAML\n---\n',
   };
-
-  for (const [name, input] of Object.entries(malformedDirectives)) {
-    it(`rejects ${name}`, () =>
-      strict.throws(() => parseAll(input), SyntaxError));
-  }
-
   const acceptedDirectives = {
     'two spaces before the version': '%YAML  1.1\n---\na: 1\n',
     'a tab before the version': '%YAML \t1.1\n---\na: 1\n',
@@ -228,6 +219,11 @@ describe('A %YAML directive names one YAML 1 version', () => {
     'a reserved directive with a shorter name': '%YAM 1.1\n---\na: 1\n',
     'a reserved directive with a longer name': '%YAMLL 1.1\n---\na: 1\n',
   };
+
+  for (const [name, input] of Object.entries(malformedDirectives)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
 
   for (const [name, input] of Object.entries(acceptedDirectives)) {
     it(`reads the document after ${name}`, () =>

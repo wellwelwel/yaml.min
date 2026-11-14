@@ -1,14 +1,11 @@
 import type { YamlErrorCode } from '../../src/index.ts';
 import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
+import { parse, YamlError } from '../__helpers__/index.mts';
 
 type CodeCase = { source: string; line: number; column: number };
 
 type HiddenCase = { escapeSequence: string; label: string };
-
-const require = createRequire(import.meta.url);
-const { parse, YamlError } = require('../../src/index.ts');
 
 const README = new URL('../../README.md', import.meta.url);
 const MESSAGE_LIMIT = 300;

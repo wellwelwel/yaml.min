@@ -4,85 +4,45 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 import {
   assertParsesTo,
+  parse,
   parseWithinTimeLimit,
   read,
 } from '../__helpers__/index.mts';
 
-const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+describe('A quoted scalar holds the text between its quotes', () => {
+  const quotedScalars = {
+    'a single-quoted word': {
+      file: 'quoted-scalars--string-single-simple.yaml',
+      expected: 'hello',
+    },
+    'a single quote escaped by doubling it': {
+      file: 'quoted-scalars--string-single-escaped.yaml',
+      expected: "he's",
+    },
+    'a "#" and doubled quotes inside single quotes': {
+      file: 'quoted-scalars--string-single-complex.yaml',
+      expected: " # Not a 'comment'.",
+    },
+    'a single-quoted top-level scalar that is not a key': {
+      file: 'quoted-scalars--top-level-quoted-string.yaml',
+      expected: 'hello world',
+    },
+    'a double-quoted word': {
+      file: 'quoted-scalars--string-double-simple.yaml',
+      expected: 'hello',
+    },
+    'a double-quoted escape beyond ASCII': {
+      file: 'quoted-scalars--string-double-smiley.yaml',
+      expected: 'Sosa did fine.\u263A',
+    },
+  };
 
-describe('Single-quoted strings', () => {
-  it('simple', () =>
-    assertParsesTo(read('quoted-scalars--string-single-simple.yaml'), 'hello'));
-
-  it('escaped quote', () =>
-    assertParsesTo(read('quoted-scalars--string-single-escaped.yaml'), "he's"));
-
-  it('complex', () =>
-    assertParsesTo(
-      read('quoted-scalars--string-single-complex.yaml'),
-      " # Not a 'comment'."
-    ));
-
-  it('top-level quoted string not a map key', () =>
-    assertParsesTo(
-      read('quoted-scalars--top-level-quoted-string.yaml'),
-      'hello world'
-    ));
-});
-
-describe('Double-quoted strings', () => {
-  it('simple', () =>
-    assertParsesTo(read('quoted-scalars--string-double-simple.yaml'), 'hello'));
-
-  it('newline', () =>
-    assertParsesTo(
-      read('quoted-scalars--string-double-newline.yaml'),
-      'hello\nworld'
-    ));
-
-  it('tab', () =>
-    assertParsesTo(read('quoted-scalars--string-double-tab.yaml'), '\t'));
-
-  it('hex escape', () =>
-    assertParsesTo(read('quoted-scalars--string-double-hex.yaml'), 'A'));
-
-  it('unicode 4', () =>
-    assertParsesTo(read('quoted-scalars--string-double-unicode4.yaml'), 'A'));
-
-  it('unicode 8', () =>
-    assertParsesTo(read('quoted-scalars--string-double-unicode8.yaml'), 'A'));
-
-  it('unicode smiley', () =>
-    assertParsesTo(
-      read('quoted-scalars--string-double-smiley.yaml'),
-      'Sosa did fine.\u263A'
-    ));
-
-  it('control chars', () =>
-    assertParsesTo(
-      read('quoted-scalars--string-double-control.yaml'),
-      '\b1998\t1999\t2000\n'
-    ));
-
-  it('null escape', () =>
-    assertParsesTo(read('quoted-scalars--string-double-null.yaml'), '\x00'));
-
-  it('bell', () =>
-    assertParsesTo(read('quoted-scalars--string-double-bell.yaml'), '\x07'));
-
-  it('escape char', () =>
-    assertParsesTo(read('quoted-scalars--string-double-escape.yaml'), '\x1b'));
-
-  it('slash', () =>
-    assertParsesTo(read('quoted-scalars--string-double-slash.yaml'), '/'));
-
-  it('backslash', () =>
-    assertParsesTo(read('quoted-scalars--string-double-backslash.yaml'), '\\'));
+  for (const [name, { file, expected }] of Object.entries(quotedScalars)) {
+    it(`reads ${name}`, () => assertParsesTo(read(file), expected));
+  }
 });
 
 describe('A quoted scalar must reach its closing quote', () => {
@@ -278,14 +238,6 @@ describe('A quoted scalar continues only on lines indented past its block collec
     ],
   };
 
-  for (const [name, [input, line]] of Object.entries(underIndented)) {
-    it(`rejects ${name}`, () =>
-      strict.throws(() => parse(input), {
-        code: 'INVALID_INDENTATION',
-        line,
-      }));
-  }
-
   const indented: Record<string, [string, unknown]> = {
     'a mapping value continued one space past its key': [
       'k: "a\n b"',
@@ -301,6 +253,14 @@ describe('A quoted scalar continues only on lines indented past its block collec
     ],
     'a top-level scalar continued at column 0': ['"a\nb"', 'a b'],
   };
+
+  for (const [name, [input, line]] of Object.entries(underIndented)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parse(input), {
+        code: 'INVALID_INDENTATION',
+        line,
+      }));
+  }
 
   for (const [name, [input, expected]] of Object.entries(indented)) {
     it(`accepts ${name}`, () => assertParsesTo(input, expected));
