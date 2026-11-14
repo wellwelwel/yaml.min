@@ -116,6 +116,56 @@ describe('A "key: value" item of a flow sequence is a single-pair mapping', () =
   }
 });
 
+describe('A ":" followed by a tab or a line break separates a flow key from its value', () => {
+  const separatedPairs = {
+    'a tab in a flow mapping': {
+      input: '{admin:\ttrue}',
+      expected: { admin: true },
+    },
+    'a line break in a flow mapping': {
+      input: '{admin:\ntrue}',
+      expected: { admin: true },
+    },
+    'a tab before a comma in a flow mapping': {
+      input: '{a:\t, b: 1}',
+      expected: { a: null, b: 1 },
+    },
+    'a tab in a flow sequence': {
+      input: '[admin:\ttrue]',
+      expected: [{ admin: true }],
+    },
+    'a line break in a flow sequence': {
+      input: '[admin:\ntrue]',
+      expected: [{ admin: true }],
+    },
+    'a tab before a comma in a flow sequence': {
+      input: '[a:\t, b]',
+      expected: [{ a: null }, 'b'],
+    },
+    'a line break in a flow mapping held by a block mapping': {
+      input: 'x:\n  {a:\n   b}',
+      expected: { x: { a: 'b' } },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(separatedPairs)) {
+    it(`reads the pair split by ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
+describe('A flow collection line is indented past the block collection that holds it', () => {
+  const unindentedLines = {
+    'an entry line after a ","': 'key: [a,\nb]\n',
+    'a value line after a ":"': 'x:\n  {a:\nb}',
+  };
+
+  for (const [name, input] of Object.entries(unindentedLines)) {
+    it(`rejects ${name} at the indentation of the block collection`, () =>
+      strict.throws(() => parse(input), { code: 'INVALID_INDENTATION' }));
+  }
+});
+
 await describe('A flow collection only closes with its own bracket', async () => {
   const mismatchedBrackets = {
     'a sequence closed by a brace': '[}',
@@ -207,6 +257,10 @@ describe('A pair never starts inside the value of another pair', () => {
       '{ role: user\n  admin: true }',
     'a second colon in a flow mapping entry': '{ a: b: c }',
     'a second colon in a flow sequence pair': '[ a: b: c ]',
+    'a second colon before a tab in a flow mapping entry': '{ a: b:\tc }',
+    'a second colon before a tab in a flow sequence pair': '[ a: b:\tc ]',
+    'a second colon before a line break in a flow mapping entry':
+      '{ a: b:\n  c }',
   };
 
   for (const [name, input] of Object.entries(missingCommas)) {

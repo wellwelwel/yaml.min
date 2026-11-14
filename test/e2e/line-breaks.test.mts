@@ -83,6 +83,10 @@ describe('Every construct reads CRLF and bare CR line breaks', () => {
       input: '[a,\r\nb]',
       expected: ['a', 'b'],
     },
+    'a flow mapping whose value follows CRLF': {
+      input: '{a:\r\nb}',
+      expected: { a: 'b' },
+    },
     'a document start marker followed by CRLF': {
       input: '---\r\na: 1\r\n',
       expected: { a: 1 },

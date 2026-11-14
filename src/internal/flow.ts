@@ -17,7 +17,6 @@ import {
   CHAR_RIGHT_BRACE,
   CHAR_RIGHT_BRACKET,
   CHAR_SINGLE_QUOTE,
-  CHAR_SPACE,
   CHAR_STAR,
   isBlank,
   isContentIndicator,
@@ -31,6 +30,7 @@ import { checkImplicitKey, isQuotedStrKey, setMapKey } from './keys.js';
 import {
   countIndentSpaces,
   isDocumentMarker,
+  isValueIndicator,
   skipComment,
   skipSpaces,
 } from './navigation.js';
@@ -217,18 +217,9 @@ const closeFlowEntry = (
   return code === CHAR_COMMA;
 };
 
-const isImplicitPairColon = (state: ParserState): boolean => {
-  if (state.source.charCodeAt(state.position) !== CHAR_COLON) return false;
-  if (state.position + 1 >= state.sourceLength) return true;
-
-  const afterColon = state.source.charCodeAt(state.position + 1);
-
-  return (
-    afterColon === CHAR_SPACE ||
-    afterColon === CHAR_COMMA ||
-    afterColon === CHAR_RIGHT_BRACKET
-  );
-};
+const isImplicitPairColon = (state: ParserState): boolean =>
+  state.source.charCodeAt(state.position) === CHAR_COLON &&
+  isValueIndicator(state, state.position, true);
 
 const completeImplicitPair = (
   state: ParserState,

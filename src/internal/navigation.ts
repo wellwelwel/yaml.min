@@ -8,6 +8,7 @@ import {
   CHAR_SPACE,
   CHAR_TAB,
   isBlank,
+  isFlowEntryEnd,
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
@@ -15,6 +16,14 @@ import { yamlError } from './errors.js';
 
 export const isBlankOrEnd = (state: ParserState, position: number): boolean =>
   position >= state.sourceLength || isBlank(state.source.charCodeAt(position));
+
+export const isValueIndicator = (
+  state: ParserState,
+  colonPosition: number,
+  inFlow: boolean
+): boolean =>
+  isBlankOrEnd(state, colonPosition + 1) ||
+  (inFlow && isFlowEntryEnd(state.source.charCodeAt(colonPosition + 1)));
 
 export const isAtLineBreakOrEnd = (state: ParserState): boolean =>
   state.position >= state.sourceLength ||

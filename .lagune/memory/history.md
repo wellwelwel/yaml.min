@@ -267,3 +267,10 @@
 - **Category:** Unintended shared state between aliased values
 - **What it is:** When a document reuses a node through an alias (`*name`), the result does not hold a copy: every place the alias appears points to the very same mapping or sequence the anchor labels.
 - **Closed:** 2026-11-14
+
+### Colons followed by a tab or line break in flow collections
+
+- **Classification:** Medium
+- **Category:** Parser differential (CWE-436: Interpretation Conflict)
+- **What it is:** Inside a bracket or brace collection, the parser treats a colon as the separator between a key and its value only when a space, a comma, or a closing bracket follows it. When a tab or a line break follows the colon instead, the colon stays part of the key's text and the value joins the key. `{admin:<tab>true}` reads as a single key named `admin:<tab>true` with no value, and `{admin:` with `true}` on the next line reads as a key named `admin: true`. YAML treats the tab and the line break as separators there, and **js-yaml** and **yaml** both read `{admin: true}` from the same bytes.
+- **Closed:** 2026-11-14

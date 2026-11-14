@@ -90,9 +90,6 @@ describe('A multi-line plain scalar keeps its continuation lines', () => {
 describe('A continuation line must be indented with spaces past its owner', () => {
   it('rejects a continuation line indented with a tab', () =>
     strict.throws(() => parse('k: first\n\tsecond\n'), SyntaxError));
-
-  it('rejects a flow line indented at its owning block collection', () =>
-    strict.throws(() => parse('key: [a,\nb]\n'), SyntaxError));
 });
 
 describe('A plain scalar ends only where an indicator can end it', () => {
@@ -104,10 +101,6 @@ describe('A plain scalar ends only where an indicator can end it', () => {
     'a ":" without a space after it in a flow mapping value': {
       file: 'plain-scalars--flow-map-colon-value.yaml',
       expected: { url: 'http://x.com' },
-    },
-    'a ":" followed by a tab in a flow sequence': {
-      file: 'plain-scalars--flow-colon-tab.yaml',
-      expected: ['a:\tb'],
     },
     'a ":" without a space after it in a sequence entry': {
       file: 'plain-scalars--inline-colon-no-map.yaml',

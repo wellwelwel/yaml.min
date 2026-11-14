@@ -5,7 +5,6 @@ import {
   CHAR_HASH,
   CHAR_MINUS,
   CHAR_QUESTION,
-  CHAR_SPACE,
   CHAR_TAB,
   isBlank,
   isFlowEntryEnd,
@@ -19,6 +18,7 @@ import {
   countIndentSpaces,
   isBlankOrEnd,
   isDocumentMarker,
+  isValueIndicator,
   lineBreakWidth,
 } from './navigation.js';
 
@@ -28,19 +28,6 @@ const trimEnd = (text: string): string => {
   while (cursor > 0 && isBlank(text.charCodeAt(cursor - 1))) cursor--;
 
   return cursor < text.length ? text.slice(0, cursor) : text;
-};
-
-const endsPlainScalarAtColon = (
-  state: ParserState,
-  colonPosition: number,
-  inFlow: boolean
-): boolean => {
-  if (!inFlow) return isBlankOrEnd(state, colonPosition + 1);
-  if (colonPosition + 1 >= state.sourceLength) return true;
-
-  const afterColon = state.source.charCodeAt(colonPosition + 1);
-
-  return afterColon === CHAR_SPACE || isFlowEntryEnd(afterColon);
 };
 
 export const findPlainLineEnd = (
@@ -58,8 +45,7 @@ export const findPlainLineEnd = (
     if (code === CHAR_HASH && isSpaceOrTab(state.source.charCodeAt(cursor - 1)))
       break;
 
-    if (code === CHAR_COLON && endsPlainScalarAtColon(state, cursor, inFlow))
-      break;
+    if (code === CHAR_COLON && isValueIndicator(state, cursor, inFlow)) break;
 
     if (inFlow && isFlowIndicator(code)) break;
 
