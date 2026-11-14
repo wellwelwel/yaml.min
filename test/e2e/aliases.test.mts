@@ -8,8 +8,15 @@ import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
 import { assertParsesTo, read } from '../__helpers__/index.mts';
 
+type Settings = { host: string; origins: string[] };
+
+type SharedConfig = { defaults: Settings; production: Settings };
+
 const require = createRequire(import.meta.url);
 const { parse, parseAll } = require('../../src/index.ts');
+
+const SHARED_CONFIG_DOCUMENT =
+  'defaults: &defaults\n  host: localhost\n  origins: [a.example]\nproduction: *defaults\n';
 
 describe('An alias resolves to the value its anchor labels', () => {
   const resolvedAliases = {
@@ -217,6 +224,74 @@ describe('An alias returns the anchored value itself, not a copy', () => {
       strict.equal(copy, original);
     });
   }
+});
+
+describe('A collection an alias refers to can no longer change', () => {
+  const changes: Record<string, (config: SharedConfig) => void> = {
+    'a value through an alias': (config) => {
+      config.production.host = 'example.com';
+    },
+    'a value through the anchor': (config) => {
+      config.defaults.host = 'example.com';
+    },
+    'a nested sequence through an alias': (config) => {
+      config.production.origins.push('localhost');
+    },
+    'a nested sequence through the anchor': (config) => {
+      config.defaults.origins[0] = 'localhost';
+    },
+  };
+
+  for (const [name, change] of Object.entries(changes)) {
+    it(`rejects a change to ${name}`, () => {
+      const config: SharedConfig = parse(SHARED_CONFIG_DOCUMENT);
+
+      strict.throws(() => change(config), TypeError);
+      strict.deepEqual(config, {
+        defaults: { host: 'localhost', origins: ['a.example'] },
+        production: { host: 'localhost', origins: ['a.example'] },
+      });
+    });
+  }
+
+  it('rejects a change to a collection held under a key named after a built-in member', () => {
+    const config: { production: { constructor: string[] } } = parse(
+      'defaults: &defaults\n  constructor: [a.example]\nproduction: *defaults\n',
+      { allowUnsafeKeys: true }
+    );
+
+    strict.throws(
+      () => config.production.constructor.push('localhost'),
+      TypeError
+    );
+    strict.deepEqual(config.production.constructor, ['a.example']);
+  });
+});
+
+describe('A collection no alias refers to stays changeable', () => {
+  it('lets code change an anchored collection no alias refers to', () => {
+    const config: { staging: Settings } = parse(
+      'staging: &staging\n  host: localhost\n  origins: [a.example]\n'
+    );
+
+    config.staging.host = 'staging.example';
+    config.staging.origins.push('localhost');
+
+    strict.deepEqual(config, {
+      staging: { host: 'staging.example', origins: ['a.example', 'localhost'] },
+    });
+  });
+
+  it('lets code replace an alias in the collection that holds it', () => {
+    const config: SharedConfig = parse(SHARED_CONFIG_DOCUMENT);
+
+    config.production = { host: 'example.com', origins: [] };
+
+    strict.deepEqual(config, {
+      defaults: { host: 'localhost', origins: ['a.example'] },
+      production: { host: 'example.com', origins: [] },
+    });
+  });
 });
 
 describe('Anchor names never reach the prototype chain', () => {

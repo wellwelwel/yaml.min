@@ -227,7 +227,7 @@ production:
   connection: *defaults
 ```
 
-An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears. An alias can only refer to a node that is already complete. See [Untrusted Input](#untrusted-input) for how much aliases can repeat.
+An alias returns the value its anchor labels, not a copy. Each mapping or sequence an alias refers to is frozen, along with everything inside it, so it can't be changed through the anchor or any alias. To change one, copy it, for example with `structuredClone`, and change the copy. A `structuredClone` of the whole result keeps its aliased parts shared but no longer frozen. An alias can only refer to a node that is already complete. See [Untrusted Input](#untrusted-input) for how much aliases can repeat.
 
 **yaml.min** follows **YAML** 1.2, which has no merge keys, so it never copies the entries of one mapping into another. Parsers that apply the older merge key read `<<: *defaults` as those copied entries. To never read a document differently from them, **yaml.min** rejects a key that reads as `<<`, whether plain, quoted, or through an alias, with `MERGE_KEY`. For a literal `<<` key, write it as a quoted scalar tagged `!!str`, such as `!!str "<<"`, which those parsers also read as text.
 

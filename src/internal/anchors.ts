@@ -38,18 +38,30 @@ export const declareAnchor = (
   return anchor;
 };
 
+const childrenOf = (collection: object): unknown[] =>
+  Array.isArray(collection) ? collection : Object.values(collection);
+
 const collectionHeight = (value: unknown): number => {
   if (typeof value !== 'object' || value === null) return 0;
 
   let tallest = 0;
 
-  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+  for (const child of childrenOf(value)) {
     const height = collectionHeight(child);
 
     if (height > tallest) tallest = height;
   }
 
   return tallest + 1;
+};
+
+const deepFreeze = (value: unknown): void => {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value))
+    return;
+
+  for (const child of childrenOf(value)) deepFreeze(child);
+
+  Object.freeze(value);
 };
 
 const aliasExpansionLimit = (state: ParserState): number =>
@@ -162,6 +174,8 @@ export const parseAlias = (
 
   if (state.depth + node.height > state.maxDepth)
     throw aliasNestingError(state, name, aliasStart);
+
+  deepFreeze(node.value);
 
   return node.value;
 };

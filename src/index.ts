@@ -60,7 +60,7 @@ const readEveryDocument = (state: ParserState): unknown[] => {
  * - Each mapping key is the text form of a scalar, with `null` as `''`, and appears once in its mapping.
  * - YAML 1.2 has no merge keys, so no mapping merges another, and a `<<` key appears only when written as a quoted scalar tagged `!!str`, such as `!!str "<<"`.
  * - Test for a key with `Object.hasOwn()`, not `in`.
- * - An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears.
+ * - An alias returns the value its anchor labels, not a copy. Each mapping or sequence an alias refers to is frozen, along with everything inside it: copy it before changing it, for example with `structuredClone`.
  * - Numbers are `Infinity`, `-Infinity`, or `NaN` only for YAML's `.inf`, `-.inf`, and `.nan` forms, and those values do not survive a JSON round trip.
  * - An integer beyond ±9007199254740991, such as `12345678901234567890`, stays a string, unless `bigint` is `true`, which returns every integer of up to 1,000 digits as a `BigInt`. A float too large for a number, such as `1e999`, stays a string.
  * - The core schema tags `!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` set a value's type whatever its quoting, so `!!bool "false"` is `false`.

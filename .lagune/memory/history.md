@@ -260,3 +260,10 @@
 - **Category:** Prototype pollution gadget and method shadowing through document keys (CWE-1321, CWE-915)
 - **What it is:** Every mapping in the result is an ordinary JavaScript object, so it inherits built-in members such as `toString`, `hasOwnProperty`, `valueOf`, and `constructor` from the prototype all objects share. All mapping keys go through one guarded setter. It refuses a `__proto__` key, and refuses a key named after a built-in member, or `prototype`, when that key holds a mapping. Any other value under those names, a plain value or a sequence, is accepted as the object's own property and hides the built-in member of the same name. The `allowUnsafeKeys` option lifts both refusals and stores every such key, `__proto__` included, as a plain own property.
 - **Closed:** 2026-11-14
+
+### Aliases share one object
+
+- **Classification:** Medium
+- **Category:** Unintended shared state between aliased values
+- **What it is:** When a document reuses a node through an alias (`*name`), the result does not hold a copy: every place the alias appears points to the very same mapping or sequence the anchor labels.
+- **Closed:** 2026-11-14
