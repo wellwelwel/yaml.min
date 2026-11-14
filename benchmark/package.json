@@ -6,8 +6,8 @@
     "benchmark": "npm run js-yaml&& npm run yaml"
   },
   "dependencies": {
-    "js-yaml": "^4.3.0",
-    "yaml": "^2.8.3",
+    "js-yaml": "^5.5.0",
+    "yaml": "^2.9.1",
     "yaml.min": "file:.."
   }
 }
