@@ -6,19 +6,21 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     name: Release Please
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
     steps:
       - name: 🤝 Release Please
-        uses: google-github-actions/release-please-action@v3
+        uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -26,34 +28,41 @@ jobs:
           package-name: yaml.min
           changelog-path: 'CHANGELOG.md'
 
+  publish:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: Publish
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
       - name: ➕ Actions - Checkout
-        uses: actions/checkout@v4
-        if: ${{ steps.release.outputs.releases_created }}
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: ➕ Actions - Setup Node.js
-        uses: actions/setup-node@v4
-        if: ${{ steps.release.outputs.releases_created }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           check-latest: true
           node-version: lts/*
           registry-url: 'https://registry.npmjs.org'
 
       - name: ➕ Cache dependencies
-        uses: actions/cache@v4
-        if: ${{ steps.release.outputs.releases_created }}
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.npm
           key: npm-linux-${{ hashFiles('package-lock.json') }}
           restore-keys: npm-linux-
 
       - name: 📦 Installing Dependencies
-        if: ${{ steps.release.outputs.releases_created }}
         run: npm ci
 
       - name: 🚀 Building yaml.min
-        if: ${{ steps.release.outputs.releases_created }}
         run: npm run build
 
       - name: 📥 Publishing Package
-        if: ${{ steps.release.outputs.releases_created }}
         run: npm publish --provenance
