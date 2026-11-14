@@ -90,7 +90,7 @@ parse(source, { maxDepth: 256, bigint: false, allowUnsafeKeys: false });
 | ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `maxDepth`        | `256`   | How deep collections can nest, however they are written, counting the levels each alias repeats. Must be an integer from `0` to `400`. See [Untrusted Input](#untrusted-input). |
 | `bigint`          | `false` | Returns integers as `BigInt`. See [Integers](#integers).                                                                                                                        |
-| `allowUnsafeKeys` | `false` | Accepts `__proto__` keys, and keys named `prototype` or after another `Object.prototype` member that hold a mapping. See [Untrusted Input](#untrusted-input).                   |
+| `allowUnsafeKeys` | `false` | Accepts keys named `__proto__`, `prototype`, or after another `Object.prototype` member as ordinary own keys. See [Untrusted Input](#untrusted-input).                          |
 
 ---
 
@@ -289,36 +289,36 @@ try {
 
 ### Error Codes
 
-| Code                           | Meaning                                                                                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ALIAS_EXPANSION_TOO_LARGE`    | Aliases repeat more content than the input allows. See [Untrusted Input](#untrusted-input).                                                            |
-| `COLLECTION_KEY`               | A mapping key is a sequence or a mapping.                                                                                                              |
-| `DUPLICATE_ANCHOR`             | A node carries more than one anchor.                                                                                                                   |
-| `DUPLICATE_KEY`                | A key appears more than once in a mapping, including keys that share a text form, such as `0x10` and `16`.                                             |
-| `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                                      |
-| `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                                    |
-| `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                             |
-| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or puts its `:` over 1,024 characters after its start.           |
-| `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                           |
-| `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                           |
-| `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                            |
-| `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                             |
-| `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                             |
-| `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                                      |
-| `MERGE_KEY`                    | A key reads as the merge key `<<` and is not a quoted scalar tagged `!!str`. See [Anchors and Aliases](#anchors-and-aliases).                          |
-| `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                                  |
-| `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`, counting the levels aliases repeat.                                                                           |
-| `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                             |
-| `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                                       |
-| `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                                      |
-| `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.                      |
-| `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                                   |
-| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection.                                                                                 |
-| `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                                       |
-| `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                                    |
-| `UNSAFE_KEY`                   | A key is `__proto__`, or is named `prototype` or after another `Object.prototype` member and holds a mapping. See [Untrusted Input](#untrusted-input). |
-| `UNTERMINATED_FLOW_COLLECTION` | A flow sequence or mapping is never closed.                                                                                                            |
-| `UNTERMINATED_STRING`          | A quoted scalar is never closed.                                                                                                                       |
+| Code                           | Meaning                                                                                                                                      |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALIAS_EXPANSION_TOO_LARGE`    | Aliases repeat more content than the input allows. See [Untrusted Input](#untrusted-input).                                                  |
+| `COLLECTION_KEY`               | A mapping key is a sequence or a mapping.                                                                                                    |
+| `DUPLICATE_ANCHOR`             | A node carries more than one anchor.                                                                                                         |
+| `DUPLICATE_KEY`                | A key appears more than once in a mapping, including keys that share a text form, such as `0x10` and `16`.                                   |
+| `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                            |
+| `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                          |
+| `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                   |
+| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or puts its `:` over 1,024 characters after its start. |
+| `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                 |
+| `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                 |
+| `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                  |
+| `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                   |
+| `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                   |
+| `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                            |
+| `MERGE_KEY`                    | A key reads as the merge key `<<` and is not a quoted scalar tagged `!!str`. See [Anchors and Aliases](#anchors-and-aliases).                |
+| `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                        |
+| `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`, counting the levels aliases repeat.                                                                 |
+| `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                   |
+| `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                             |
+| `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                            |
+| `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.            |
+| `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                         |
+| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection.                                                                       |
+| `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                             |
+| `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                          |
+| `UNSAFE_KEY`                   | A key is named `__proto__`, `prototype`, or after another `Object.prototype` member. See [Untrusted Input](#untrusted-input).                |
+| `UNTERMINATED_FLOW_COLLECTION` | A flow sequence or mapping is never closed.                                                                                                  |
+| `UNTERMINATED_STRING`          | A quoted scalar is never closed.                                                                                                             |
 
 ---
 
@@ -327,7 +327,7 @@ try {
 - `maxDepth` stops a hostile document from exhausting the call stack, in the parser or in your code that walks the result. An alias counts the levels of the node it repeats, so the result never nests deeper than the limit, even when every node in the document stays within it. Its ceiling of `400` stays below the shallowest overflow measured (about 750 nested block mappings on **Node.js** 22).
 - The content that aliases repeat adds up to at most the larger of 1,000,000 characters and 10 times the length of the input, so a handful of nested aliases can't turn into gigabytes once the result is walked or serialized.
 - Neither `parse` nor `parseAll` limits input size, and their work grows linearly with it, so cap the size of untrusted input before parsing.
-- Results are ordinary objects, and every key lands as an own property, so parsing never changes a prototype. `__proto__` keys are refused, and so are keys named `prototype` or after any other `Object.prototype` member (such as `constructor`, `toString`, or `hasOwnProperty`) that hold a mapping, because copying the result with `Object.assign` or a deep merge can turn them into prototype changes or rewrite built-in methods. Those names holding any other value are accepted. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
+- Results are ordinary objects, and every key lands as an own property, so parsing never changes a prototype. Keys named `__proto__`, `prototype`, or after any other `Object.prototype` member (such as `constructor`, `toString`, or `hasOwnProperty`) are refused, because they would hide built-in members of the result, and copying it with `Object.assign` or a deep merge can turn them into prototype changes or rewrite built-ins. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
 - A deep merge that descends into functions or arrays already in its target can still reach built-ins through other names, such as `call` on a function or `slice` on an array. Merge results only with code that never descends into functions or inherited properties.
 - Check for a key with `Object.hasOwn`, since `in` also finds the members every object inherits.
 - Double-quoted scalars can hold control characters through escapes such as `\e` and `\0` (NUL), and any scalar can hold bidirectional marks such as U+202E even when written raw. Escape or strip both before writing parsed values to a terminal or log or passing them as command arguments, and reject NUL before passing a value to code that treats it as the end of a string.

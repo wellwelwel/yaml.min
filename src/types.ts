@@ -3,7 +3,7 @@ export type ParseOptions = {
   maxDepth?: number;
   /** Returns integers of up to 1,000 digits as `BigInt`, exactly. */
   bigint?: boolean;
-  /** Accepts `__proto__` keys, and keys named after another `Object.prototype` member or `prototype` that hold a mapping, as ordinary own keys. */
+  /** Accepts keys named `__proto__`, `prototype`, or after another `Object.prototype` member as ordinary own keys. */
   allowUnsafeKeys?: boolean;
 };
 

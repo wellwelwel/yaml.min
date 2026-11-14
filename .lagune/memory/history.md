@@ -253,3 +253,10 @@
 - **Category:** Interpretation conflict with tools that apply merge keys, taught by documentation the parser contradicts (CWE-436, CWE-1068)
 - **What it is:** Many YAML files use the older `<<: *defaults` convention to copy the entries of a shared block into another mapping. **yaml.min** does not apply it, which matches YAML 1.2: `<<` is stored as an ordinary key holding the shared block, and the mapping gains none of its entries. The project's own README teaches the convention anyway. Its "Anchors and Aliases" example builds `development` and `production` from `<<: *defaults` and never says the defaults stay nested under a key named `<<`. Parsing that exact example returns no `adapter` and no `host` for `production`.
 - **Closed:** 2026-11-14
+
+### Keys named after built-in object members
+
+- **Classification:** Medium
+- **Category:** Prototype pollution gadget and method shadowing through document keys (CWE-1321, CWE-915)
+- **What it is:** Every mapping in the result is an ordinary JavaScript object, so it inherits built-in members such as `toString`, `hasOwnProperty`, `valueOf`, and `constructor` from the prototype all objects share. All mapping keys go through one guarded setter. It refuses a `__proto__` key, and refuses a key named after a built-in member, or `prototype`, when that key holds a mapping. Any other value under those names, a plain value or a sequence, is accepted as the object's own property and hides the built-in member of the same name. The `allowUnsafeKeys` option lifts both refusals and stores every such key, `__proto__` included, as a plain own property.
+- **Closed:** 2026-11-14

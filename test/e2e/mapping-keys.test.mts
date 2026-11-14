@@ -223,16 +223,6 @@ describe('A mapping never repeats a key', () => {
       accepted: '{? a : 1, ? b : 2}',
       parsed: { a: 1, b: 2 },
     },
-    'an inherited property name twice in a block mapping': {
-      rejected: 'toString: 1\ntoString: 2\n',
-      accepted: 'toString: 1\nhasOwnProperty: 2\n',
-      parsed: { toString: 1, hasOwnProperty: 2 },
-    },
-    'an inherited property name twice in a flow mapping': {
-      rejected: '{toString: 1, toString: 2}',
-      accepted: '{toString: 1, valueOf: 2}',
-      parsed: { toString: 1, valueOf: 2 },
-    },
   };
 
   for (const [name, { rejected, accepted, parsed }] of Object.entries(
@@ -328,10 +318,9 @@ describe('A key that reads as the merge key "<<" never merges', () => {
     }));
 });
 
-describe('Mapping keys named after prototype properties', () => {
-  const prototypeNames = [
+describe('A key named after a prototype property is refused unless unsafe keys are allowed', () => {
+  const objectPrototypeMembers = [
     'constructor',
-    'prototype',
     'toString',
     'toLocaleString',
     'valueOf',
@@ -343,10 +332,7 @@ describe('Mapping keys named after prototype properties', () => {
     '__lookupGetter__',
     '__lookupSetter__',
   ];
-  const everyName = ['__proto__', ...prototypeNames];
-  const objectPrototypeMembers = prototypeNames.filter(
-    (name) => name !== 'prototype'
-  );
+  const everyName = ['__proto__', 'prototype', ...objectPrototypeMembers];
   const plainScalarSpellings: Spellings = {
     plain: (name) => name,
     'with a tag': (name) => `!!str ${name}`,
@@ -388,13 +374,10 @@ describe('Mapping keys named after prototype properties', () => {
     text: '{polluted: true}',
     parsed: { polluted: true },
   };
-  const harmlessValues: Record<string, HeldValue> = {
+  const everyValue: Record<string, HeldValue> = {
     'a scalar': { text: '42', parsed: 42 },
     'a sequence': { text: '[42]', parsed: [42] },
     nothing: { text: '', parsed: null },
-  };
-  const everyValue: Record<string, HeldValue> = {
-    ...harmlessValues,
     'a mapping': mapping,
   };
   const mappingSpellings = {
@@ -403,6 +386,10 @@ describe('Mapping keys named after prototype properties', () => {
       '? constructor\n:\n  polluted: true\n',
     'an alias to a mapping': 'base: &base {a: 1}\nconstructor: *base\n',
     'an empty tagged mapping': 'constructor: !!map\n',
+  };
+  const repeatedKeyDocuments = {
+    'a block mapping': (name: string) => `${name}: 1\n${name}: 2\n`,
+    'a flow mapping': (name: string) => `{${name}: 1, ${name}: 2}`,
   };
   const lookalikeNames = [
     '__proto',
@@ -414,11 +401,14 @@ describe('Mapping keys named after prototype properties', () => {
     'toString ',
   ];
 
-  const parseWhileReadOnly = (name: string, input: string): unknown => {
+  const whilePrototypeMemberIsReadOnly = (
+    name: string,
+    read: () => unknown
+  ): unknown => {
     Object.defineProperty(Object.prototype, name, { writable: false });
 
     try {
-      return parse(input);
+      return read();
     } finally {
       Object.defineProperty(Object.prototype, name, { writable: true });
     }
@@ -434,30 +424,13 @@ describe('Mapping keys named after prototype properties', () => {
           parsed('title', mapping.parsed)
         ));
 
-      for (const [held, { text }] of Object.entries(everyValue)) {
-        it(`rejects __proto__ written ${spelling} as ${form} holding ${held}`, () =>
-          strict.throws(
-            () => parse(document(spell('__proto__'), '__proto__', text)),
-            { code: 'UNSAFE_KEY' }
-          ));
-      }
-
-      for (const name of prototypeNames) {
-        it(`rejects ${name} written ${spelling} as ${form} holding a mapping`, () =>
-          strict.throws(
-            () => parse(document(spell(name), name, mapping.text)),
-            { code: 'UNSAFE_KEY' }
-          ));
-      }
-    }
-
-    for (const name of prototypeNames) {
-      for (const [held, value] of Object.entries(harmlessValues)) {
-        it(`accepts ${name} as ${form} holding ${held}`, () =>
-          assertParsesTo(
-            document(name, name, value.text),
-            parsed(name, value.parsed)
-          ));
+      for (const name of everyName) {
+        for (const [held, { text }] of Object.entries(everyValue)) {
+          it(`rejects ${name} written ${spelling} as ${form} holding ${held}`, () =>
+            strict.throws(() => parse(document(spell(name), name, text)), {
+              code: 'UNSAFE_KEY',
+            }));
+        }
       }
     }
 
@@ -472,23 +445,20 @@ describe('Mapping keys named after prototype properties', () => {
     }
   }
 
-  for (const [spelling, spell] of Object.entries(everySpelling)) {
-    it(`rejects __proto__ written ${spelling} as an explicit key without a value`, () =>
-      strict.throws(
-        () => parse(`anchor: &name __proto__\n? ${spell('__proto__')}\n`),
-        { code: 'UNSAFE_KEY' }
-      ));
-  }
+  for (const name of everyName) {
+    for (const [spelling, spell] of Object.entries(everySpelling)) {
+      it(`rejects ${name} written ${spelling} as an explicit key without a value`, () =>
+        strict.throws(
+          () => parse(`anchor: &name ${name}\n? ${spell(name)}\n`),
+          { code: 'UNSAFE_KEY' }
+        ));
+    }
 
-  for (const name of prototypeNames) {
-    it(`accepts ${name} as an explicit key without a value`, () =>
-      assertParsesTo(`? ${name}\n`, { [name]: null }));
+    it(`keeps ${name} as an own explicit key without a value when unsafe keys are allowed`, () =>
+      strict.deepEqual(parse(`? ${name}\n`, { allowUnsafeKeys: true }), {
+        [name]: null,
+      }));
   }
-
-  it('keeps __proto__ as an own explicit key without a value when unsafe keys are allowed', () =>
-    strict.deepEqual(parse('? __proto__\n', { allowUnsafeKeys: true }), {
-      ['__proto__']: null,
-    }));
 
   for (const [spelling, document] of Object.entries(mappingSpellings)) {
     it(`rejects constructor holding ${spelling}`, () =>
@@ -502,12 +472,13 @@ describe('Mapping keys named after prototype properties', () => {
       }));
   }
 
-  for (const name of ['__proto__', 'constructor']) {
-    it(`rejects ${name} twice in one mapping when unsafe keys are allowed`, () =>
-      strict.throws(
-        () => parse(`${name}: 1\n${name}: 2\n`, { allowUnsafeKeys: true }),
-        { code: 'DUPLICATE_KEY' }
-      ));
+  for (const name of everyName) {
+    for (const [form, repeat] of Object.entries(repeatedKeyDocuments)) {
+      it(`rejects ${name} twice in ${form} when unsafe keys are allowed`, () =>
+        strict.throws(() => parse(repeat(name), { allowUnsafeKeys: true }), {
+          code: 'DUPLICATE_KEY',
+        }));
+    }
   }
 
   for (const name of lookalikeNames) {
@@ -518,10 +489,13 @@ describe('Mapping keys named after prototype properties', () => {
   }
 
   for (const name of objectPrototypeMembers) {
-    it(`keeps ${name} as an own key while Object.prototype.${name} is read-only`, () =>
-      strict.deepEqual(parseWhileReadOnly(name, `${name}: 1\n`), {
-        [name]: 1,
-      }));
+    it(`keeps ${name} as an own key while Object.prototype.${name} is read-only and unsafe keys are allowed`, () =>
+      strict.deepEqual(
+        whilePrototypeMemberIsReadOnly(name, () =>
+          parse(`${name}: 1\n`, { allowUnsafeKeys: true })
+        ),
+        { [name]: 1 }
+      ));
   }
 
   for (const name of everyName) {

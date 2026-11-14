@@ -34,18 +34,7 @@ const IS_PROTOTYPE_KEY_LENGTH: readonly boolean[] = Array.from(
 const isPrototypeKey = (name: string): boolean =>
   IS_PROTOTYPE_KEY_LENGTH[name.length] === true && PROTOTYPE_KEYS.has(name);
 
-const isMapping = (value: unknown): boolean =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const protoKeyError = (state: ParserState, keyStart: number): YamlError =>
-  yamlError(
-    state,
-    'UNSAFE_KEY',
-    'The mapping key "__proto__" would change the prototype of any object the result is copied or merged into: expected another key',
-    keyStart
-  );
-
-const prototypeKeyError = (
+const unsafeKeyError = (
   state: ParserState,
   name: string,
   keyStart: number
@@ -53,7 +42,9 @@ const prototypeKeyError = (
   yamlError(
     state,
     'UNSAFE_KEY',
-    `The mapping key ${quote(name)} holds a mapping, which a deep merge of the result could turn into a change to a prototype or built-in the whole program shares: expected a value that is not a mapping, or another key`,
+    name === '__proto__'
+      ? 'The mapping key "__proto__" would change the prototype of any object the result is copied or merged into: expected another key'
+      : `The mapping key ${quote(name)} is named after a built-in object member, which it would hide from code that reads the result, and a deep merge of the result could turn it into a change to a prototype or built-in the whole program shares: expected another key`,
     keyStart
   );
 
@@ -133,16 +124,6 @@ const stringifyKey = (
   return key == null ? '' : String(key);
 };
 
-const refuseUnsafeKey = (
-  state: ParserState,
-  name: string,
-  keyStart: number,
-  value: unknown
-): void => {
-  if (name === '__proto__') throw protoKeyError(state, keyStart);
-  if (isMapping(value)) throw prototypeKeyError(state, name, keyStart);
-};
-
 const definePrototypeKey = (
   state: ParserState,
   target: Record<string, unknown>,
@@ -150,7 +131,7 @@ const definePrototypeKey = (
   keyStart: number,
   value: unknown
 ): void => {
-  if (!state.allowUnsafeKeys) refuseUnsafeKey(state, name, keyStart, value);
+  if (!state.allowUnsafeKeys) throw unsafeKeyError(state, name, keyStart);
 
   Object.defineProperty(target, name, {
     value,
