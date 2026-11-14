@@ -1,5 +1,6 @@
 import type { ParserState } from '../types.js';
 import {
+  CHAR_BYTE_ORDER_MARK,
   CHAR_CARRIAGE_RETURN,
   CHAR_DOT,
   CHAR_HASH,
@@ -49,6 +50,13 @@ export const countIndentSpaces = (
 export const isLineStart = (state: ParserState, position: number): boolean =>
   position === 0 || isLineBreak(state.source.charCodeAt(position - 1));
 
+export const isByteOrderMarkAfterLineBreak = (
+  state: ParserState,
+  position: number
+): boolean =>
+  state.source.charCodeAt(position) === CHAR_BYTE_ORDER_MARK &&
+  isLineBreak(state.source.charCodeAt(position - 1));
+
 const isMarkerOf = (
   state: ParserState,
   position: number,
@@ -58,7 +66,8 @@ const isMarkerOf = (
   state.source.charCodeAt(position + 1) === markerCode &&
   state.source.charCodeAt(position + 2) === markerCode &&
   isBlankOrEnd(state, position + 3) &&
-  isLineStart(state, position);
+  (isLineStart(state, position) ||
+    isByteOrderMarkAfterLineBreak(state, position - 1));
 
 export const isDocumentStart = (
   state: ParserState,
@@ -74,6 +83,13 @@ export const isDocumentMarker = (
 ): boolean =>
   isDocumentStart(state, position) || isDocumentEnd(state, position);
 
+export const isDocumentBoundary = (
+  state: ParserState,
+  position: number
+): boolean =>
+  isDocumentMarker(state, position) ||
+  isByteOrderMarkAfterLineBreak(state, position);
+
 export const skipSpaces = (state: ParserState): void => {
   while (isSpaceOrTab(state.source.charCodeAt(state.position)))
     state.position++;
@@ -88,7 +104,8 @@ export const skipComment = (state: ParserState): void => {
 
   if (
     state.position > 0 &&
-    !isBlank(state.source.charCodeAt(state.position - 1))
+    !isBlank(state.source.charCodeAt(state.position - 1)) &&
+    !isByteOrderMarkAfterLineBreak(state, state.position - 1)
   )
     throw yamlError(
       state,

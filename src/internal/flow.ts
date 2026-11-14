@@ -29,7 +29,7 @@ import { characterAt, quote, yamlError } from './errors.js';
 import { checkImplicitKey, isQuotedStrKey, setMapKey } from './keys.js';
 import {
   countIndentSpaces,
-  isDocumentMarker,
+  isDocumentBoundary,
   isValueIndicator,
   skipComment,
   skipSpaces,
@@ -79,11 +79,11 @@ const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
   )
     return;
 
-  if (isDocumentMarker(state, lineStart))
+  if (isDocumentBoundary(state, lineStart))
     throw yamlError(
       state,
       'UNEXPECTED_DOCUMENT_MARKER',
-      'A document marker interrupts a flow collection: expected the collection to close before the "---" or "..." line',
+      'A document boundary interrupts a flow collection: expected the collection to close before the line that starts with "---", "...", or a byte order mark',
       lineStart
     );
 

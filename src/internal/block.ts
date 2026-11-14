@@ -32,7 +32,7 @@ import {
   countIndentSpaces,
   isAtLineBreakOrEnd,
   isBlankOrEnd,
-  isDocumentMarker,
+  isDocumentBoundary,
   isLineStart,
   skipComment,
   skipNewlinesAndComments,
@@ -65,9 +65,8 @@ const isExplicitKey = (state: ParserState): boolean =>
 const isMappingValue = (state: ParserState): boolean =>
   isIndicatorAt(state, CHAR_COLON);
 
-const opensBlockCollection = (state: ParserState, code: number): boolean =>
-  (code === CHAR_MINUS || code === CHAR_QUESTION) &&
-  isBlankOrEnd(state, state.position + 1);
+const opensBlockCollection = (state: ParserState): boolean =>
+  isSequenceEntry(state) || isExplicitKey(state);
 
 const skipIndicator = (state: ParserState): void => {
   state.position++;
@@ -135,7 +134,7 @@ const enterBlockLine = (state: ParserState, indent: number): boolean => {
 
   if (state.position >= state.sourceLength) return false;
 
-  if (lineIndent < indent || isDocumentMarker(state, state.position)) {
+  if (lineIndent < indent || isDocumentBoundary(state, state.position)) {
     state.position -= lineIndent;
     return false;
   }
@@ -167,7 +166,7 @@ const parseNextLineValue = (
 
   if (
     state.position >= state.sourceLength ||
-    isDocumentMarker(state, state.position)
+    isDocumentBoundary(state, state.position)
   )
     return resolveEmptyNode(state, properties?.tag);
 
@@ -308,7 +307,7 @@ const parseMapKey = (
     return parseFlowSequence(state, indent, tag);
   if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent, tag);
   if (keyCode === CHAR_STAR) return parseAlias(state, tag);
-  if (opensBlockCollection(state, keyCode))
+  if (opensBlockCollection(state))
     throw collectionKeyError(state, state.position);
 
   return resolvePlainScalar(state, tag, parsePlainKey(state));

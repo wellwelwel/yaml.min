@@ -8,7 +8,7 @@ import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, strict } from 'poku';
 import typescript from 'typescript';
-import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
+import { parse, read } from '../__helpers__/index.mts';
 
 const TEST_TSCONFIG = fileURLToPath(
   new URL('../tsconfig.json', import.meta.url)
@@ -55,9 +55,6 @@ describe('Input validation', () => {
       () => parse(read('parse--input-null-byte.yaml')),
       SyntaxError
     ));
-
-  it('strips BOM from input', () =>
-    assertParsesTo(read('parse--input-bom.yaml'), { a: 1 }));
 });
 
 describe('Result type', () => {

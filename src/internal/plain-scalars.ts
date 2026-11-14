@@ -17,7 +17,7 @@ import { characterAt, quote, yamlError } from './errors.js';
 import {
   countIndentSpaces,
   isBlankOrEnd,
-  isDocumentMarker,
+  isDocumentBoundary,
   isValueIndicator,
   lineBreakWidth,
 } from './navigation.js';
@@ -115,7 +115,7 @@ const isPlainContinuation = (
 
   const code = state.source.charCodeAt(contentStart);
 
-  if (code === CHAR_HASH || isDocumentMarker(state, lineStart)) return false;
+  if (code === CHAR_HASH || isDocumentBoundary(state, lineStart)) return false;
 
   if (code === CHAR_COLON && isBlankOrEnd(state, contentStart + 1))
     return false;

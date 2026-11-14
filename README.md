@@ -313,7 +313,7 @@ try {
 | `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                            |
 | `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.            |
 | `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                         |
-| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection.                                                                       |
+| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection, or a byte order mark outside quotes starts a line inside a document.  |
 | `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                             |
 | `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                          |
 | `UNSAFE_KEY`                   | A key is named `__proto__`, `prototype`, or after another `Object.prototype` member. See [Untrusted Input](#untrusted-input).                |

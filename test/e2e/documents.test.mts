@@ -70,6 +70,12 @@ describe('parse never returns part of a multi-document stream', () => {
     'a separator after a folded block scalar': '--- >\n  a\n  b\n---\nc',
     'a directive before each document':
       '%YAML 1.2\n---\na: 1\n...\n%YAML 1.2\n---\nb: 2\n',
+    'a byte order mark opening a second document':
+      'role: user\n...\n\uFEFFrole: admin\n',
+    'a byte order mark before a second separator':
+      'role: user\n...\n\uFEFF---\nrole: admin\n',
+    'a byte order mark before a separator below a top-level plain scalar':
+      'text\n\uFEFF--- {"role":"admin"}\n',
   };
 
   for (const [name, input] of Object.entries(multiDocumentStreams)) {
@@ -132,6 +138,163 @@ describe('parseAll returns every document in order', () => {
   for (const [name, { input, expected }] of Object.entries(streams)) {
     it(`returns ${name}`, () => strict.deepEqual(parseAll(input), expected));
   }
+});
+
+describe('A byte order mark may open each document of a stream', () => {
+  const markedStreams = {
+    'the first document': {
+      input: '\uFEFFrole: admin\n',
+      expected: [{ role: 'admin' }],
+    },
+    'the first document after a comment': {
+      input: '# note\n\uFEFFrole: admin\n',
+      expected: [{ role: 'admin' }],
+    },
+    'a later document': {
+      input: 'role: user\n...\n\uFEFFrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a later document started by a separator': {
+      input: 'role: user\n...\n\uFEFF---\nrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a later document that opens with a comment': {
+      input: 'role: user\n...\n\uFEFF# admin\nrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a later document that opens with a directive': {
+      input: 'role: user\n...\n\uFEFF%YAML 1.2\n---\nrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a later document after a marked comment': {
+      input: 'role: user\n...\n\uFEFF# note\n\uFEFFrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a later document after a line holding only a mark': {
+      input: 'role: user\n...\n\uFEFF\n\uFEFFrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+  };
+  const marksThatOpenNoDocument = {
+    'a second mark': {
+      input: 'role: user\n...\n\uFEFF\uFEFFrole: admin\n',
+      expected: [{ role: 'user' }, { '\uFEFFrole': 'admin' }],
+    },
+    'a second mark at the start of the input': {
+      input: '\uFEFF\uFEFFrole: admin\n',
+      expected: [{ '\uFEFFrole': 'admin' }],
+    },
+    'an indented mark': {
+      input: 'role: user\n...\n  \uFEFFrole: admin\n',
+      expected: [{ role: 'user' }, { '\uFEFFrole': 'admin' }],
+    },
+  };
+  const marksEndingOpenDocuments = {
+    'a marked separator after a mapping': {
+      input: 'role: user\n\uFEFF---\nrole: admin\n',
+      expected: [{ role: 'user' }, { role: 'admin' }],
+    },
+    'a marked separator after a plain scalar': {
+      input: 'text\n\uFEFF--- {"role":"admin"}\n',
+      expected: ['text', { role: 'admin' }],
+    },
+    'a marked separator after a block scalar': {
+      input: '|\nabc\n\uFEFF---\ndef\n',
+      expected: ['abc\n', 'def'],
+    },
+    'a marked blank line before a separator': {
+      input: 'text\n\uFEFF\n---\nmore\n',
+      expected: ['text', 'more'],
+    },
+    'a marked comment before a separator': {
+      input: 'text\n\uFEFF# note\n---\nmore\n',
+      expected: ['text', 'more'],
+    },
+    'a marked separator after CRLF line breaks': {
+      input: 'text\r\n\uFEFF--- more\r\n',
+      expected: ['text', 'more'],
+    },
+    'a marked separator after bare CR line breaks': {
+      input: 'text\r\uFEFF--- more\r',
+      expected: ['text', 'more'],
+    },
+  };
+  const marksInsideQuotedScalars = {
+    'a double-quoted scalar': {
+      input: '"text\n\uFEFFmore"',
+      expected: ['text \uFEFFmore'],
+    },
+    'a single-quoted scalar': {
+      input: "'text\n\uFEFFmore'",
+      expected: ['text \uFEFFmore'],
+    },
+    'a double-quoted scalar after an escaped line break': {
+      input: '"text\\\n\uFEFFmore"',
+      expected: ['text\uFEFFmore'],
+    },
+    'a double-quoted scalar before a separator': {
+      input: '"text\n\uFEFF--- more"',
+      expected: ['text \uFEFF--- more'],
+    },
+  };
+  const marksInsideDocuments = {
+    'before content': 'text\n\uFEFFmore\n',
+    'before a mapping key': 'role: user\n\uFEFFrole: admin\n',
+    'after a separator': '---\n\uFEFFrole: admin\n',
+    'before an end marker': 'text\n\uFEFF...\nmore\n',
+    'before a directive': 'role: user\n\uFEFF%YAML 1.2\n---\nrole: admin\n',
+    'at the end of the stream': 'text\n\uFEFF',
+    'after a marked comment that ends a document':
+      'text\n\uFEFF# note\n\uFEFF---\nmore\n',
+    'after a marked comment that ends a document, with CRLF line breaks':
+      'text\r\n\uFEFF# note\r\n\uFEFF---\r\nmore\r\n',
+    'after a marked comment that ends a document, with bare CR line breaks':
+      'text\r\uFEFF# note\r\uFEFF---\rmore\r',
+    'after a marked comment that ends a mapping':
+      'role: user\n\uFEFF# note: x\n\uFEFF---\nrole: admin\n',
+    'after a marked blank line that ends a document':
+      'text\n\uFEFF\n\uFEFF---\nmore\n',
+    'in a flow collection': '[text,\n\uFEFFmore]',
+  };
+
+  for (const [name, { input, expected }] of Object.entries(markedStreams)) {
+    it(`reads ${name} without its mark`, () =>
+      strict.deepEqual(parseAll(input), expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(
+    marksThatOpenNoDocument
+  )) {
+    it(`keeps ${name} in the key it touches`, () =>
+      strict.deepEqual(parseAll(input), expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(
+    marksEndingOpenDocuments
+  )) {
+    it(`ends the open document at ${name}`, () =>
+      strict.deepEqual(parseAll(input), expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(
+    marksInsideQuotedScalars
+  )) {
+    it(`keeps a mark that starts a line of ${name} as text`, () =>
+      strict.deepEqual(parseAll(input), expected));
+  }
+
+  for (const [name, input] of Object.entries(marksInsideDocuments)) {
+    it(`rejects a mark that starts a line ${name}`, () =>
+      strict.throws(() => parseAll(input), {
+        code: 'UNEXPECTED_DOCUMENT_MARKER',
+      }));
+  }
+
+  it('adds no document for a mark that ends the stream', () =>
+    strict.deepEqual(parseAll('role: user\n...\n\uFEFF'), [{ role: 'user' }]));
+
+  it('parse reads a single document without its mark', () =>
+    assertParsesTo(read('documents--byte-order-mark.yaml'), { a: 1 }));
 });
 
 describe('An end marker closes a document and never starts one', () => {

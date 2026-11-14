@@ -6,6 +6,8 @@ import { codePointLabel, quote, yamlError } from './errors.js';
 import {
   isAtLineBreakOrEnd,
   isBlankOrEnd,
+  isByteOrderMarkAfterLineBreak,
+  isDocumentBoundary,
   isDocumentEnd,
   isDocumentStart,
   skipBlanksAndComments,
@@ -85,23 +87,31 @@ const skipDocumentEndLine = (state: ParserState): void => {
     );
 };
 
-const closeDocument = (state: ParserState): void => {
+const skipDocumentPrefix = (state: ParserState): number => {
+  let lineIndent = skipNewlinesAndComments(state);
+
+  while (isByteOrderMarkAfterLineBreak(state, state.position)) {
+    state.position++;
+    lineIndent = skipNewlinesAndComments(state);
+  }
+
+  return lineIndent;
+};
+
+const finishDocument = (state: ParserState): void => {
   skipBlanksAndComments(state);
 
   if (
     state.position >= state.sourceLength ||
-    isDocumentStart(state, state.position)
+    isDocumentBoundary(state, state.position)
   )
     return;
 
-  if (!isDocumentEnd(state, state.position))
-    throw yamlError(
-      state,
-      'UNEXPECTED_CONTENT',
-      'Unexpected content after the end of the document: expected the end of input, "---" to start a new document, or "..." to end this one'
-    );
-
-  skipDocumentEndLine(state);
+  throw yamlError(
+    state,
+    'UNEXPECTED_CONTENT',
+    'Unexpected content after the end of the document: expected the end of input, "---" to start a new document, or "..." to end this one'
+  );
 };
 
 const isYamlDirective = (state: ParserState): boolean =>
@@ -187,14 +197,34 @@ const readDirectives = (state: ParserState): void => {
     );
 };
 
+const skipToDocumentStartAfterByteOrderMark = (state: ParserState): void => {
+  const byteOrderMarkPosition = state.position;
+
+  state.position++;
+  skipNewlinesAndComments(state);
+
+  if (!isDocumentStart(state, state.position))
+    throw yamlError(
+      state,
+      'UNEXPECTED_DOCUMENT_MARKER',
+      'A byte order mark starts a line inside a document: expected a "---" line after it to start the next document, or a "..." line before it to end this one',
+      byteOrderMarkPosition
+    );
+};
+
 export const skipToDocument = (state: ParserState): boolean => {
   state.tagHandles.clear();
 
-  let lineIndent = skipNewlinesAndComments(state);
+  if (isByteOrderMarkAfterLineBreak(state, state.position)) {
+    skipToDocumentStartAfterByteOrderMark(state);
+    return true;
+  }
+
+  let lineIndent = skipDocumentPrefix(state);
 
   while (isDocumentEnd(state, state.position)) {
     skipDocumentEndLine(state);
-    lineIndent = skipNewlinesAndComments(state);
+    lineIndent = skipDocumentPrefix(state);
   }
 
   if (state.position >= state.sourceLength) return false;
@@ -224,7 +254,7 @@ export const readDocument = (state: ParserState): unknown => {
     ? readMarkedDocumentRoot(state)
     : readBareDocumentRoot(state);
 
-  closeDocument(state);
+  finishDocument(state);
 
   return value;
 };

@@ -274,3 +274,10 @@
 - **Category:** Parser differential (CWE-436: Interpretation Conflict)
 - **What it is:** Inside a bracket or brace collection, the parser treats a colon as the separator between a key and its value only when a space, a comma, or a closing bracket follows it. When a tab or a line break follows the colon instead, the colon stays part of the key's text and the value joins the key. `{admin:<tab>true}` reads as a single key named `admin:<tab>true` with no value, and `{admin:` with `true}` on the next line reads as a key named `admin: true`. YAML treats the tab and the line break as separators there, and **js-yaml** and **yaml** both read `{admin: true}` from the same bytes.
 - **Closed:** 2026-11-14
+
+### Byte order marks at the start of later documents
+
+- **Classification:** Medium
+- **Category:** Parser differential through Unicode handling (CWE-436: Interpretation Conflict, CWE-176: Improper Handling of Unicode Encoding)
+- **What it is:** A byte order mark (the invisible character U+FEFF) is removed only when it opens the whole input. When it opens a later document of a stream read with `parseAll`, it is kept. Before a bare document it becomes the first character of the first key, so a document that starts with the mark and `role: admin` produces a key that prints as `role` but is not `role`. Before a `---` line it makes the whole stream fail. **js-yaml** (5.4.0, issue 791) and **yaml** both drop the mark at the start of every document and read `role: admin`.
+- **Closed:** 2026-11-14

@@ -14,10 +14,11 @@ import { yamlError } from './errors.js';
 import {
   countIndentSpaces,
   isAtLineBreakOrEnd,
-  isDocumentMarker,
+  isDocumentBoundary,
   lineBreakWidth,
   skipComment,
   skipSpaces,
+  skipToLineEnd,
 } from './navigation.js';
 
 const foldBlockLines = (contentLines: string[]): string => {
@@ -76,7 +77,7 @@ const detectContentIndent = (
       continue;
     }
 
-    if (isDocumentMarker(state, lineStart)) return -1;
+    if (isDocumentBoundary(state, lineStart)) return -1;
 
     if (indent <= parentIndent) {
       if (code === CHAR_TAB)
@@ -192,12 +193,12 @@ const readBlockScalarLines = (
       continue;
     }
 
-    if (spaces < contentIndent || isDocumentMarker(state, lineStart)) {
+    if (spaces < contentIndent || isDocumentBoundary(state, lineStart)) {
       state.position = lineStart;
       break;
     }
 
-    while (!isAtLineBreakOrEnd(state)) state.position++;
+    skipToLineEnd(state);
 
     lines.push(state.source.slice(lineStart + contentIndent, state.position));
 
