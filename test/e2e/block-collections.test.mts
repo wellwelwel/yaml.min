@@ -176,6 +176,67 @@ describe('Empty values', () => {
     ]));
 });
 
+describe('An empty nested value leaves the lines after it at their own level', () => {
+  const documentsWithEmptyNestedValues = {
+    'the sibling keys after an empty mapping value': {
+      input:
+        'on:\n  pull_request:\n  push:\n    branches: [main]\njobs:\n  build: ok\n',
+      expected: {
+        on: { pull_request: null, push: { branches: ['main'] } },
+        jobs: { build: 'ok' },
+      },
+    },
+    'the keys of every enclosing mapping after an empty mapping value': {
+      input: 'a:\n  b:\n    c:\n    d: 1\n  e: 2\nf: 3\n',
+      expected: { a: { b: { c: null, d: 1 }, e: 2 }, f: 3 },
+    },
+    'the items and keys after an empty sequence item': {
+      input: 'list:\n  -\n  - b\nafter: 1\n',
+      expected: { list: [null, 'b'], after: 1 },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(
+    documentsWithEmptyNestedValues
+  )) {
+    it(`keeps ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
+describe('A block sequence may start at the indentation of its key', () => {
+  const sequencesAtKeyIndentation = {
+    'a top-level key': {
+      input:
+        'steps:\n- run: echo hi\n- uses: actions/checkout@v4\nafter: kept\n',
+      expected: {
+        steps: [{ run: 'echo hi' }, { uses: 'actions/checkout@v4' }],
+        after: 'kept',
+      },
+    },
+    'a nested key': {
+      input:
+        'jobs:\n  build:\n    steps:\n    - run: echo hi\n    runs-on: ubuntu-latest\nnext: 1\n',
+      expected: {
+        jobs: {
+          build: { steps: [{ run: 'echo hi' }], 'runs-on': 'ubuntu-latest' },
+        },
+        next: 1,
+      },
+    },
+    'a key that follows an empty value': {
+      input: 'a:\nb:\n- 1\n- 2\nc: 3\n',
+      expected: { a: null, b: [1, 2], c: 3 },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(
+    sequencesAtKeyIndentation
+  )) {
+    it(`reads the sequence of ${name} and the keys after it`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
 describe('Compact values after a sequence entry', () => {
   it('single-quoted inline', () =>
     assertParsesTo(read('block-collections--seq-single-quoted.yaml'), [

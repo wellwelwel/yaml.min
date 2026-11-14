@@ -60,6 +60,24 @@ describe('Every construct reads CRLF and bare CR line breaks', () => {
       input: '-\r\n  a: 1',
       expected: [{ a: 1 }],
     },
+    'nested empty map value followed by sibling keys with CRLF': {
+      input: 'a:\r\n  b:\r\n    c:\r\n    d: 1\r\n  e: 2\r\nf: 3\r\n',
+      expected: { a: { b: { c: null, d: 1 }, e: 2 }, f: 3 },
+    },
+    'nested empty seq item followed by items and keys with CRLF': {
+      input: 'list:\r\n  -\r\n  - b\r\nafter: 1\r\n',
+      expected: { list: [null, 'b'], after: 1 },
+    },
+    "block seq at its key's indentation with CRLF": {
+      input:
+        'jobs:\r\n  build:\r\n    steps:\r\n    - run: echo hi\r\n    runs-on: ubuntu-latest\r\nnext: 1\r\n',
+      expected: {
+        jobs: {
+          build: { steps: [{ run: 'echo hi' }], 'runs-on': 'ubuntu-latest' },
+        },
+        next: 1,
+      },
+    },
     'inline seq item with CRLF after dash': {
       input: '- -\r\n    val',
       expected: [['val']],

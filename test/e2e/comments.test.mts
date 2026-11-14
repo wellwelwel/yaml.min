@@ -35,6 +35,33 @@ describe('Comments', () => {
     }));
 });
 
+describe('A comment line never moves the lines after it to another level', () => {
+  const documentsWithCommentLines = {
+    'an empty nested mapping value': {
+      input: 'a:\n  b:\n    c:\n# note\n    # note\n    d: 1\n  e: 2\nf: 3\n',
+      expected: { a: { b: { c: null, d: 1 }, e: 2 }, f: 3 },
+    },
+    'an empty nested sequence item': {
+      input: 'list:\n  -\n      # note\n  - b\nafter: 1\n',
+      expected: { list: [null, 'b'], after: 1 },
+    },
+    "a key and its block sequence at the key's indentation": {
+      input:
+        'steps: # note\n# note\n- run: echo hi\n  # note\n- uses: actions/checkout@v4\nafter: kept\n',
+      expected: {
+        steps: [{ run: 'echo hi' }, { uses: 'actions/checkout@v4' }],
+        after: 'kept',
+      },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(
+    documentsWithCommentLines
+  )) {
+    it(`after ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
 describe('A comment after a tab', () => {
   it('inline comment after tab', () =>
     assertParsesTo(read('comments--inline-comment-after-tab.yaml'), {
