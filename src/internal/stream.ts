@@ -1,12 +1,8 @@
-import type { ParserState } from '../types.js';
+import type { ParseOptions, ParserState } from '../types.js';
 import { parseValue } from './block.js';
-import {
-  CHAR_BYTE_ORDER_MARK,
-  CHAR_LINE_FEED,
-  CHAR_PERCENT,
-  NON_PRINTABLE,
-} from './chars.js';
-import { syntaxError } from './errors.js';
+import { CHAR_BYTE_ORDER_MARK, CHAR_PERCENT, NON_PRINTABLE } from './chars.js';
+import { readMaxDepth } from './depth.js';
+import { codePointLabel, yamlError } from './errors.js';
 import {
   isAtLineBreakOrEnd,
   isDocumentEnd,
@@ -16,6 +12,7 @@ import {
   skipComment,
   skipNewlinesAndComments,
   skipSpaces,
+  skipToLineEnd,
 } from './navigation.js';
 import { isTagDirective, readTagDirective } from './tags.js';
 
@@ -25,25 +22,25 @@ const rejectNonPrintable = (state: ParserState): void => {
   if (match === null) return;
 
   const position = match.index + match[0].length - 1;
-  const codeUnit = state.src
-    .charCodeAt(position)
-    .toString(16)
-    .toUpperCase()
-    .padStart(4, '0');
 
-  throw syntaxError(
+  throw yamlError(
     state,
-    `The input holds the non-printable character U+${codeUnit}: expected printable characters, tabs, and line breaks only`,
+    'NON_PRINTABLE_CHARACTER',
+    `The input holds the non-printable character ${codePointLabel(state.src.charCodeAt(position))}: expected printable characters, tabs, and line breaks only`,
     position
   );
 };
 
-export const createParserState = (input: string): ParserState => {
+export const createParserState = (
+  input: string,
+  options: ParseOptions | undefined
+): ParserState => {
   if (typeof input !== 'string')
     throw new TypeError(
       'The input is not a string: expected a string holding the YAML source'
     );
 
+  const maxDepth = readMaxDepth(options);
   const src =
     input.charCodeAt(0) === CHAR_BYTE_ORDER_MARK ? input.slice(1) : input;
   const state: ParserState = {
@@ -51,6 +48,9 @@ export const createParserState = (input: string): ParserState => {
     len: src.length,
     pos: 0,
     depth: 0,
+    maxDepth,
+    bigint: options?.bigint === true,
+    allowUnsafeKeys: options?.allowUnsafeKeys === true,
     anchors: { nodes: new Map(), expansion: 0 },
     tagHandles: new Map(),
   };
@@ -73,16 +73,18 @@ const closeDocument = (state: ParserState): void => {
   if (state.pos >= state.len || isDocumentStart(state, state.pos)) return;
 
   if (!isDocumentEnd(state, state.pos))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'UNEXPECTED_CONTENT',
       'Unexpected content after the end of the document: expected the end of input, "---" to start a new document, or "..." to end this one'
     );
 
   skipMarkerLine(state);
 
   if (!isAtLineBreakOrEnd(state))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'UNEXPECTED_CONTENT',
       'Unexpected content after "...": expected a comment or the end of the line'
     );
 };
@@ -105,11 +107,7 @@ export const skipToDocument = (state: ParserState): boolean => {
       continue;
     }
 
-    while (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
-    )
-      state.pos++;
+    skipToLineEnd(state);
   }
 
   return false;

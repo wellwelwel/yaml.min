@@ -118,7 +118,7 @@ describe('A trailing backslash is a truncated escape', () => {
 });
 
 describe('A hexadecimal escape holds exactly its width in hexadecimal digits', () => {
-  const malformedHexEscapes = {
+  const malformedHexadecimalEscapes = {
     'a two-digit escape that would swallow the closing quote':
       'a: "\\x2"\nb: kept\n',
     'an eight-digit escape that would swallow the next entry':
@@ -140,7 +140,7 @@ describe('A hexadecimal escape holds exactly its width in hexadecimal digits', (
     'an eight-digit escape cut by the end of input': 'k: "\\U12',
   };
 
-  for (const [name, input] of Object.entries(malformedHexEscapes)) {
+  for (const [name, input] of Object.entries(malformedHexadecimalEscapes)) {
     it(`rejects ${name}`, () => strict.throws(() => parse(input), SyntaxError));
   }
 

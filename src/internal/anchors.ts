@@ -1,22 +1,13 @@
+import type { YamlError } from '../error.js';
 import type { AnchorDeclaration, NodeTag, ParserState } from '../types.js';
-import {
-  CHAR_COLON,
-  CHAR_COMMA,
-  CHAR_RIGHT_BRACE,
-  CHAR_RIGHT_BRACKET,
-  isBlank,
-} from './chars.js';
-import { syntaxError } from './errors.js';
+import { CHAR_COLON, isBlank, isFlowEntryEnd } from './chars.js';
+import { quote, yamlError } from './errors.js';
 
 const MIN_ALIAS_EXPANSION_LIMIT = 1_000_000;
 const ALIAS_EXPANSION_PER_INPUT_CHARACTER = 10;
 
 const isAnchorNameEnd = (code: number): boolean =>
-  isBlank(code) ||
-  code === CHAR_COMMA ||
-  code === CHAR_RIGHT_BRACKET ||
-  code === CHAR_RIGHT_BRACE ||
-  code === CHAR_COLON;
+  isBlank(code) || isFlowEntryEnd(code) || code === CHAR_COLON;
 
 export const readAnchorName = (state: ParserState): string => {
   const start = state.pos;
@@ -43,6 +34,20 @@ export const declareAnchor = (
   };
 };
 
+const collectionHeight = (value: unknown): number => {
+  if (typeof value !== 'object' || value === null) return 0;
+
+  let tallest = 0;
+
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    const height = collectionHeight(child);
+
+    if (height > tallest) tallest = height;
+  }
+
+  return tallest + 1;
+};
+
 const aliasExpansionLimit = (state: ParserState): number =>
   Math.max(
     MIN_ALIAS_EXPANSION_LIMIT,
@@ -53,10 +58,55 @@ const aliasExpansionError = (
   state: ParserState,
   name: string,
   aliasStart: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The alias "*${name}" makes aliases repeat more than ${aliasExpansionLimit(state)} characters of the document: expected aliases to repeat at most the larger of ${MIN_ALIAS_EXPANSION_LIMIT} characters and ${ALIAS_EXPANSION_PER_INPUT_CHARACTER} times the input length`,
+    'ALIAS_EXPANSION_TOO_LARGE',
+    `The alias ${quote(`*${name}`)} makes aliases repeat more than ${aliasExpansionLimit(state)} characters of the document: expected aliases to repeat at most the larger of ${MIN_ALIAS_EXPANSION_LIMIT} characters and ${ALIAS_EXPANSION_PER_INPUT_CHARACTER} times the input length`,
+    aliasStart
+  );
+
+const aliasNestingError = (
+  state: ParserState,
+  name: string,
+  aliasStart: number
+): YamlError =>
+  yamlError(
+    state,
+    'NESTING_TOO_DEEP',
+    `The alias ${quote(`*${name}`)} nests the collections it repeats more than ${state.maxDepth} levels deep: expected at most ${state.maxDepth} levels of nesting, including the levels aliases repeat`,
+    aliasStart
+  );
+
+const aliasTagError = (state: ParserState, tag: NodeTag): YamlError =>
+  yamlError(
+    state,
+    'INVALID_TAG',
+    `The tag ${quote(tag.source)} labels an alias: expected an alias without a tag`,
+    tag.start
+  );
+
+const missingAnchorError = (
+  state: ParserState,
+  name: string,
+  aliasStart: number
+): YamlError =>
+  yamlError(
+    state,
+    'UNKNOWN_ANCHOR',
+    `The alias ${quote(`*${name}`)} names no anchor: expected ${quote(`&${name}`)} to be defined earlier in the same document`,
+    aliasStart
+  );
+
+const unfinishedAnchorError = (
+  state: ParserState,
+  name: string,
+  aliasStart: number
+): YamlError =>
+  yamlError(
+    state,
+    'UNKNOWN_ANCHOR',
+    `The alias ${quote(`*${name}`)} refers to the node its own anchor labels, which is not finished yet: expected an alias to a node completed before it`,
     aliasStart
   );
 
@@ -64,12 +114,7 @@ export const parseAlias = (
   state: ParserState,
   tag: NodeTag | undefined
 ): unknown => {
-  if (tag !== undefined)
-    throw syntaxError(
-      state,
-      `The tag ${tag.source} labels an alias: expected an alias without a tag`,
-      tag.start
-    );
+  if (tag !== undefined) throw aliasTagError(state, tag);
 
   const aliasStart = state.pos;
 
@@ -78,32 +123,27 @@ export const parseAlias = (
   const name = readAnchorName(state);
 
   if (name === '')
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_ALIAS',
       'An alias has no name: expected an anchor name right after "*"',
       aliasStart
     );
 
   const node = state.anchors.nodes.get(name);
 
-  if (node === undefined)
-    throw syntaxError(
-      state,
-      `The alias "*${name}" names no anchor: expected "&${name}" to be defined earlier in the same document`,
-      aliasStart
-    );
-
-  if (node === null)
-    throw syntaxError(
-      state,
-      `The alias "*${name}" refers to the node its own anchor labels, which is not finished yet: expected an alias to a node completed before it`,
-      aliasStart
-    );
+  if (node === undefined) throw missingAnchorError(state, name, aliasStart);
+  if (node === null) throw unfinishedAnchorError(state, name, aliasStart);
 
   state.anchors.expansion += node.size;
 
   if (state.anchors.expansion > aliasExpansionLimit(state))
     throw aliasExpansionError(state, name, aliasStart);
+
+  node.height ??= collectionHeight(node.value);
+
+  if (state.depth + node.height > state.maxDepth)
+    throw aliasNestingError(state, name, aliasStart);
 
   return node.value;
 };
@@ -122,6 +162,7 @@ export const withAnchor = (
       anchor.contentStart +
       state.anchors.expansion -
       anchor.expansionAtStart,
+    height: undefined,
   });
 
   return value;

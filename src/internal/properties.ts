@@ -1,27 +1,30 @@
+import type { YamlError } from '../error.js';
 import type { NodeProperties, NodeTag, ParserState } from '../types.js';
 import { declareAnchor, readAnchorName } from './anchors.js';
 import { CHAR_AMPERSAND, CHAR_EXCLAMATION } from './chars.js';
-import { syntaxError } from './errors.js';
+import { quote, yamlError } from './errors.js';
 import { skipSpaces } from './navigation.js';
 import { readTag } from './tags.js';
 
 const secondAnchorError = (
   state: ParserState,
   firstAnchor: string
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `A node carries a second anchor after "&${firstAnchor}": expected at most one anchor per node`
+    'DUPLICATE_ANCHOR',
+    `A node carries a second anchor after ${quote(`&${firstAnchor}`)}: expected at most one anchor per node`
   );
 
 const secondTagError = (
   state: ParserState,
   firstTag: string,
   position: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `A node carries a second tag after ${firstTag}: expected at most one tag per node`,
+    'DUPLICATE_TAG',
+    `A node carries a second tag after ${quote(firstTag)}: expected at most one tag per node`,
     position
   );
 

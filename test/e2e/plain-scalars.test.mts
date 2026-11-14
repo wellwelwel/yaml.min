@@ -6,7 +6,11 @@
 
 import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import {
+  assertParsesTo,
+  parseWithinTimeLimit,
+  read,
+} from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
 const { parse } = require('../../src/index.ts');
@@ -148,4 +152,20 @@ describe('Where a plain scalar ends', () => {
 
   it('question mark not followed by whitespace is plain scalar', () =>
     assertParsesTo(read('plain-scalars--question-no-whitespace.yaml'), '?abc'));
+});
+
+await describe('A multi-line plain scalar folds in time proportional to its length', async () => {
+  const longScalars = {
+    'as a block mapping value': `text:\n${'  word word word\n'.repeat(80_000)}`,
+    'with trailing spaces on every line': `text:\n${'  word word word   \n'.repeat(80_000)}`,
+    'inside a flow sequence': `[${' word word word\n'.repeat(80_000)}]`,
+  };
+
+  for (const [name, input] of Object.entries(longScalars)) {
+    await it(`folds 80,000 lines ${name} within the time limit`, async () => {
+      const outcome = await parseWithinTimeLimit(input);
+
+      strict.equal(outcome, 'returned');
+    });
+  }
 });

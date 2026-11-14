@@ -78,6 +78,20 @@ data.database.enabled; // true
 data.database.ports; // [8001, 8002, 8003]
 ```
 
+### Options
+
+`parse` and `parseAll` take an optional second argument:
+
+```ts
+parse(source, { maxDepth: 256, bigint: false, allowUnsafeKeys: false });
+```
+
+| Option            | Default | Description                                                                                                                                                                     |
+| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxDepth`        | `256`   | How deep collections can nest, however they are written, counting the levels each alias repeats. Must be an integer from `0` to `400`. See [Untrusted Input](#untrusted-input). |
+| `bigint`          | `false` | Returns integers as `BigInt`. See [Integers](#integers).                                                                                                                        |
+| `allowUnsafeKeys` | `false` | Accepts `__proto__` keys, and keys named `prototype` or after another `Object.prototype` member that hold a mapping. See [Untrusted Input](#untrusted-input).                   |
+
 ---
 
 ## Supported Types
@@ -131,7 +145,9 @@ hex: 0xDEADBEEF
 octal: 0o755
 ```
 
-An integer beyond the range JavaScript holds exactly (±9,007,199,254,740,991), such as a 20-digit identifier, stays a string instead of being rounded.
+An integer beyond the range **JavaScript** holds exactly (±9,007,199,254,740,991), such as a 20-digit identifier, stays a string instead of being rounded.
+
+With `bigint: true`, every integer of up to 1,000 digits is returned as an exact `BigInt`, and longer ones stay strings, because converting them costs more than linear time. Floats stay numbers.
 
 ### Floats
 
@@ -143,7 +159,7 @@ negative_inf: -.inf
 not_a_number: .nan
 ```
 
-A number too large for JavaScript, such as `1e999`, stays a string instead of becoming `Infinity`.
+A number too large for **JavaScript**, such as `1e999`, stays a string instead of becoming `Infinity`.
 
 ### Booleans
 
@@ -211,7 +227,7 @@ production:
   <<: *defaults
 ```
 
-An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears. An alias can only refer to a node that is already complete, and the content that aliases repeat can add up to at most the larger of 1,000,000 characters and 10 times the length of the input.
+An alias returns the value its anchor labels, not a copy, so changing it in one place changes it everywhere the alias appears. An alias can only refer to a node that is already complete. See [Untrusted Input](#untrusted-input) for how much aliases can repeat.
 
 ### Explicit Keys
 
@@ -229,7 +245,7 @@ zip: !!str 01234 # "01234"
 limit: !!int '5' # 5
 ```
 
-`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` are honored, including through `%TAG` handles and verbatim tags such as `!<tag:yaml.org,2002:str>`. Any other tag, such as `!!binary`, `!!timestamp`, or `!custom`, and a value that does not fit its tag, such as `!!int "five"`, are rejected with a `SyntaxError`.
+`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` are honored, including through `%TAG` handles and verbatim tags such as `!<tag:yaml.org,2002:str>`. Any other tag, such as `!!binary`, `!!timestamp`, or `!custom`, is rejected with `UNKNOWN_TAG`, and a value that does not fit its tag, such as `!!int "five"`, with `TAG_MISMATCH`.
 
 ### Document Markers
 
@@ -245,6 +261,75 @@ first: document
 second: document
 `); // [{ first: 'document' }, { second: 'document' }]
 ```
+
+---
+
+## Error Handling
+
+`parse` and `parseAll` throw a `YamlError`, a `SyntaxError` with a stable `code` and the 1-based `line` and `column` of the problem:
+
+```ts
+import { parse, YamlError } from 'yaml.min';
+
+try {
+  parse('key: "unterminated');
+} catch (error) {
+  if (error instanceof YamlError)
+    console.error(
+      `${error.code} on line ${error.line}, column ${error.column}: ${error.message}`
+    );
+}
+```
+
+- `message` is plain language and can change in any release, so match on `code` to tell errors apart or to write your own messages.
+- Messages are at most 300 characters, and any key, anchor, or tag they quote is cut to 40 characters (marked with `…`). Quoted text escapes `"` and `\`, and shows control, invisible, and bidirectional characters as code points such as `[U+202E]`. Scalar values are never quoted.
+- A source that is not a string, or an invalid option, throws a `TypeError` instead.
+
+### Error Codes
+
+| Code                           | Meaning                                                                                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ALIAS_EXPANSION_TOO_LARGE`    | Aliases repeat more content than the input allows. See [Untrusted Input](#untrusted-input).                                                            |
+| `COLLECTION_KEY`               | A mapping key is a sequence or a mapping.                                                                                                              |
+| `DUPLICATE_ANCHOR`             | A node carries more than one anchor.                                                                                                                   |
+| `DUPLICATE_KEY`                | A key appears more than once in a mapping, including keys that share a text form, such as `0x10` and `16`.                                             |
+| `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                                      |
+| `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                                    |
+| `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                             |
+| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry.                                                                                                 |
+| `INVALID_ALIAS`                | An alias has no anchor name after `*`.                                                                                                                 |
+| `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                           |
+| `INVALID_DIRECTIVE`            | A `%TAG` directive is malformed.                                                                                                                       |
+| `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                             |
+| `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                             |
+| `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                                      |
+| `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                                  |
+| `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`, counting the levels aliases repeat.                                                                           |
+| `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                             |
+| `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                                       |
+| `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                                      |
+| `UNEXPECTED_CHARACTER`         | A flow collection holds a character where an entry, a comma, or its closing bracket belongs.                                                           |
+| `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                                   |
+| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection.                                                                                 |
+| `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                                       |
+| `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                                    |
+| `UNSAFE_KEY`                   | A key is `__proto__`, or is named `prototype` or after another `Object.prototype` member and holds a mapping. See [Untrusted Input](#untrusted-input). |
+| `UNTERMINATED_FLOW_COLLECTION` | A flow sequence or mapping is never closed.                                                                                                            |
+| `UNTERMINATED_STRING`          | A quoted scalar is never closed.                                                                                                                       |
+
+---
+
+## Untrusted Input
+
+- `maxDepth` stops a hostile document from exhausting the call stack, in the parser or in your code that walks the result. An alias counts the levels of the node it repeats, so the result never nests deeper than the limit, even when every node in the document stays within it. Its ceiling of `400` stays below the shallowest overflow measured (about 750 nested block mappings on **Node.js** 22).
+- The content that aliases repeat adds up to at most the larger of 1,000,000 characters and 10 times the length of the input, so a handful of nested aliases can't turn into gigabytes once the result is walked or serialized.
+- Neither `parse` nor `parseAll` limits input size, and their work grows linearly with it, so cap the size of untrusted input before parsing.
+- Results are ordinary objects, and every key lands as an own property, so parsing never changes a prototype. `__proto__` keys are refused, and so are keys named `prototype` or after any other `Object.prototype` member (such as `constructor`, `toString`, or `hasOwnProperty`) that hold a mapping, because copying the result with `Object.assign` or a deep merge can turn them into prototype changes or rewrite built-in methods. Those names holding any other value are accepted. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
+- A deep merge that descends into functions or arrays already in its target can still reach built-ins through other names, such as `call` on a function or `slice` on an array. Merge results only with code that never descends into functions or inherited properties.
+- Check for a key with `Object.hasOwn`, since `in` also finds the members every object inherits.
+- Double-quoted scalars can hold control characters through escapes such as `\e` and `\0` (NUL), and any scalar can hold bidirectional marks such as U+202E even when written raw. Escape or strip both before writing parsed values to a terminal or log or passing them as command arguments, and reject NUL before passing a value to code that treats it as the end of a string.
+- Keys are compared without Unicode normalization, so lookalike keys, such as one with a zero-width space or a decomposed accent, stay distinct. When reviewing files from untrusted authors, flag invisible or decomposed characters in keys.
+- Error messages are short and safe to display. See [Error Handling](#error-handling).
 
 ---
 
@@ -282,6 +367,8 @@ if (!isConfig(config)) throw new TypeError('Invalid configuration');
 config.database.host; // string
 config.database.port; // number
 ```
+
+`ParseOptions` and `YamlErrorCode` are also exported.
 
 ---
 

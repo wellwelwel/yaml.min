@@ -1,22 +1,22 @@
+import type { YamlError } from '../error.js';
 import type { NodeTag, ParserState, TagName } from '../types.js';
 import {
-  CHAR_COMMA,
   CHAR_GREATER_THAN,
-  CHAR_LEFT_BRACE,
-  CHAR_LEFT_BRACKET,
   CHAR_LESS_THAN,
-  CHAR_RIGHT_BRACE,
-  CHAR_RIGHT_BRACKET,
   isBlank,
+  isFlowEntryEnd,
+  isFlowIndicator,
   isSpaceOrTab,
 } from './chars.js';
-import { syntaxError } from './errors.js';
+import { enterCollection, leaveCollection } from './depth.js';
+import { quote, yamlError } from './errors.js';
 import { isAtLineBreakOrEnd, skipComment, skipSpaces } from './navigation.js';
 import {
   isNullText,
+  MAX_BIG_INTEGER_DIGITS,
   resolveBoolean,
   resolveFloat,
-  resolveSafeInteger,
+  resolveInteger,
   resolveScalar,
 } from './scalars.js';
 
@@ -52,10 +52,12 @@ const DEFAULT_TAG_HANDLES: ReadonlyMap<string, string> = new Map([
   ['!!', CORE_TAG_PREFIX],
 ]);
 
-const SCALAR_RESOLVERS: Readonly<Record<TagName, (text: string) => unknown>> = {
+const SCALAR_RESOLVERS: Readonly<
+  Record<TagName, (text: string, bigint: boolean) => unknown>
+> = {
   '!': (text) => text,
   str: (text) => text,
-  int: resolveSafeInteger,
+  int: resolveInteger,
   float: resolveFloat,
   bool: resolveBoolean,
   null: (text) => (text === '' || isNullText(text) ? null : undefined),
@@ -74,14 +76,17 @@ const TAG_EXPECTATIONS: Readonly<Record<TagName, string>> = {
   map: 'a mapping',
 };
 
+const BIG_INTEGER_EXPECTATION = `an integer of at most ${MAX_BIG_INTEGER_DIGITS} digits, such as 42, 0o52, or 0x2A`;
+
 const invalidTagError = (
   state: ParserState,
   source: string,
   start: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The tag ${source} is not well formed: expected "!", "!!", or a declared handle such as "!e!", followed by tag characters, or a verbatim tag such as "!<tag:yaml.org,2002:str>"`,
+    'INVALID_TAG',
+    `The tag ${quote(source)} is not well formed: expected "!", "!!", or a declared handle such as "!e!", followed by tag characters, or a verbatim tag such as "!<tag:yaml.org,2002:str>"`,
     start
   );
 
@@ -89,10 +94,11 @@ const unknownTagError = (
   state: ParserState,
   source: string,
   start: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The tag ${source} is not a core schema tag: expected !!str, !!int, !!float, !!bool, !!null, !!seq, !!map, or the non-specific "!"`,
+    'UNKNOWN_TAG',
+    `The tag ${quote(source)} is not a core schema tag: expected !!str, !!int, !!float, !!bool, !!null, !!seq, !!map, or the non-specific "!"`,
     start
   );
 
@@ -100,27 +106,19 @@ const tagMismatchError = (
   state: ParserState,
   tag: NodeTag,
   node: string
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The tag ${tag.source} cannot label ${node}: expected ${TAG_EXPECTATIONS[tag.name]}`,
+    'TAG_MISMATCH',
+    `The tag ${quote(tag.source)} cannot label ${node}: expected ${tag.name === 'int' && state.bigint ? BIG_INTEGER_EXPECTATION : TAG_EXPECTATIONS[tag.name]}`,
     tag.start
   );
 
 const isTagEnd = (code: number): boolean =>
-  isBlank(code) ||
-  code === CHAR_COMMA ||
-  code === CHAR_LEFT_BRACKET ||
-  code === CHAR_RIGHT_BRACKET ||
-  code === CHAR_LEFT_BRACE ||
-  code === CHAR_RIGHT_BRACE;
+  isBlank(code) || isFlowIndicator(code);
 
 const isTagFollower = (code: number, inFlow: boolean): boolean =>
-  isBlank(code) ||
-  (inFlow &&
-    (code === CHAR_COMMA ||
-      code === CHAR_RIGHT_BRACKET ||
-      code === CHAR_RIGHT_BRACE));
+  isBlank(code) || (inFlow && isFlowEntryEnd(code));
 
 const findVerbatimTagEnd = (state: ParserState, start: number): number => {
   let cursor = start + 2;
@@ -133,8 +131,9 @@ const findVerbatimTagEnd = (state: ParserState, start: number): number => {
     cursor++;
 
   if (state.src.charCodeAt(cursor) !== CHAR_GREATER_THAN)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_TAG',
       'A verbatim tag is not closed: expected ">" to end the "!<" tag on the same line',
       start
     );
@@ -185,9 +184,10 @@ const shorthandTagName = (
     state.tagHandles.get(handle) ?? DEFAULT_TAG_HANDLES.get(handle);
 
   if (prefix === undefined)
-    throw syntaxError(
+    throw yamlError(
       state,
-      `The tag handle ${handle} is not declared: expected a "%TAG ${handle} <prefix>" directive before the document`,
+      'UNDECLARED_TAG_HANDLE',
+      `The tag handle ${quote(handle)} is not declared: expected a %TAG directive declaring it before the document`,
       start
     );
 
@@ -243,9 +243,10 @@ export const readTag = (state: ParserState, inFlow: boolean): NodeTag => {
     state.pos < state.len &&
     !isTagFollower(state.src.charCodeAt(state.pos), inFlow)
   )
-    throw syntaxError(
+    throw yamlError(
       state,
-      `The tag ${source} runs into the node it labels: expected a space between the tag and the node`,
+      'INVALID_TAG',
+      `The tag ${quote(source)} runs into the node it labels: expected a space between the tag and the node`,
       start
     );
 
@@ -257,7 +258,7 @@ const resolveTaggedScalar = (
   tag: NodeTag,
   text: string
 ): unknown => {
-  const value = SCALAR_RESOLVERS[tag.name](text);
+  const value = SCALAR_RESOLVERS[tag.name](text, state.bigint);
 
   if (value === undefined)
     throw tagMismatchError(
@@ -265,6 +266,10 @@ const resolveTaggedScalar = (
       tag,
       text === '' ? 'an empty node' : 'this scalar'
     );
+  if (tag.name === 'seq' || tag.name === 'map') {
+    enterCollection(state);
+    leaveCollection(state);
+  }
 
   return value;
 };
@@ -274,7 +279,9 @@ export const resolvePlainScalar = (
   tag: NodeTag | undefined,
   raw: string
 ): unknown =>
-  tag === undefined ? resolveScalar(raw) : resolveTaggedScalar(state, tag, raw);
+  tag === undefined
+    ? resolveScalar(raw, state.bigint)
+    : resolveTaggedScalar(state, tag, raw);
 
 export const resolveTextScalar = (
   state: ParserState,
@@ -341,16 +348,18 @@ export const readTagDirective = (state: ParserState): void => {
   skipComment(state);
 
   if (!isWellFormedTagDirective(state, handle, prefix))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_DIRECTIVE',
       'A %TAG directive is not well formed: expected "%TAG", a handle such as "!e!", and a prefix such as "tag:example.com,2000:"',
       directiveStart
     );
 
   if (state.tagHandles.has(handle))
-    throw syntaxError(
+    throw yamlError(
       state,
-      `The tag handle ${handle} is declared twice for the same document: expected one %TAG directive per handle`,
+      'DUPLICATE_TAG_HANDLE',
+      `The tag handle ${quote(handle)} is declared twice for the same document: expected one %TAG directive per handle`,
       directiveStart
     );
 

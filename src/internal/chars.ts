@@ -21,7 +21,7 @@ export const CHAR_COLON = 0x3a;
 export const CHAR_LESS_THAN = 0x3c;
 export const CHAR_GREATER_THAN = 0x3e;
 export const CHAR_QUESTION = 0x3f;
-export const CHAR_UPPER_A = 0x41;
+const CHAR_UPPER_A = 0x41;
 export const CHAR_UPPER_F = 0x46;
 export const CHAR_UPPER_N = 0x4e;
 export const CHAR_UPPER_T = 0x54;
@@ -29,7 +29,7 @@ export const CHAR_UPPER_U = 0x55;
 export const CHAR_LEFT_BRACKET = 0x5b;
 export const CHAR_BACKSLASH = 0x5c;
 export const CHAR_RIGHT_BRACKET = 0x5d;
-export const CHAR_LOWER_A = 0x61;
+const CHAR_LOWER_A = 0x61;
 export const CHAR_LOWER_F = 0x66;
 export const CHAR_LOWER_N = 0x6e;
 export const CHAR_LOWER_O = 0x6f;
@@ -85,6 +85,16 @@ export const isLineBreak = (code: number): boolean =>
 
 export const isBlank = (code: number): boolean =>
   isSpaceOrTab(code) || isLineBreak(code);
+
+export const isFlowEntryEnd = (code: number): boolean =>
+  code === CHAR_COMMA ||
+  code === CHAR_RIGHT_BRACKET ||
+  code === CHAR_RIGHT_BRACE;
+
+export const isFlowIndicator = (code: number): boolean =>
+  isFlowEntryEnd(code) ||
+  code === CHAR_LEFT_BRACKET ||
+  code === CHAR_LEFT_BRACE;
 
 export const hexadecimalDigitValue = (code: number): number => {
   if (code >= CHAR_0 && code <= CHAR_9) return code - CHAR_0;

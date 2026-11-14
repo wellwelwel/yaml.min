@@ -1,38 +1,65 @@
+import type { YamlError } from '../error.js';
 import type { ParserState } from '../types.js';
-import { syntaxError } from './errors.js';
+import { quote, yamlError } from './errors.js';
 
 const PROTOTYPE_KEYS: ReadonlySet<string> = new Set([
   '__proto__',
   'constructor',
   'prototype',
+  'toString',
+  'toLocaleString',
+  'valueOf',
+  'hasOwnProperty',
+  'isPrototypeOf',
+  'propertyIsEnumerable',
+  '__defineGetter__',
+  '__defineSetter__',
+  '__lookupGetter__',
+  '__lookupSetter__',
 ]);
 
-const PROTOTYPE_KEY_LENGTHS = Array.from(PROTOTYPE_KEYS, (key) => key.length);
-const SHORTEST_PROTOTYPE_KEY_LENGTH = Math.min(...PROTOTYPE_KEY_LENGTHS);
-const LONGEST_PROTOTYPE_KEY_LENGTH = Math.max(...PROTOTYPE_KEY_LENGTHS);
+const PROTOTYPE_KEY_LENGTHS: ReadonlySet<number> = new Set(
+  Array.from(PROTOTYPE_KEYS, (key) => key.length)
+);
+
+const IS_PROTOTYPE_KEY_LENGTH: readonly boolean[] = Array.from(
+  { length: Math.max(...PROTOTYPE_KEY_LENGTHS) + 1 },
+  (_, length) => PROTOTYPE_KEY_LENGTHS.has(length)
+);
 
 const isPrototypeKey = (name: string): boolean =>
-  name.length >= SHORTEST_PROTOTYPE_KEY_LENGTH &&
-  name.length <= LONGEST_PROTOTYPE_KEY_LENGTH &&
-  PROTOTYPE_KEYS.has(name);
+  IS_PROTOTYPE_KEY_LENGTH[name.length] === true && PROTOTYPE_KEYS.has(name);
+
+const isMapping = (value: unknown): boolean =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const protoKeyError = (state: ParserState, keyStart: number): YamlError =>
+  yamlError(
+    state,
+    'UNSAFE_KEY',
+    'The mapping key "__proto__" would change the prototype of any object the result is copied or merged into: expected another key',
+    keyStart
+  );
 
 const prototypeKeyError = (
   state: ParserState,
   name: string,
   keyStart: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The mapping key "${name}" can reach an object's prototype: expected a key other than "__proto__", "constructor", or "prototype"`,
+    'UNSAFE_KEY',
+    `The mapping key ${quote(name)} holds a mapping, which a deep merge of the result could turn into a change to a prototype or built-in the whole program shares: expected a value that is not a mapping, or another key`,
     keyStart
   );
 
 export const collectionKeyError = (
   state: ParserState,
   keyStart: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
+    'COLLECTION_KEY',
     'A mapping key is a sequence or a mapping: expected a scalar key, such as text, a number, a boolean, or null',
     keyStart
   );
@@ -41,10 +68,11 @@ const duplicateKeyError = (
   state: ParserState,
   name: string,
   keyStart: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `The mapping key ${JSON.stringify(name)} appears more than once in the same mapping: expected every key of a mapping to be unique`,
+    'DUPLICATE_KEY',
+    `The mapping key ${quote(name)} appears more than once in the same mapping: expected every key of a mapping to be unique`,
     keyStart
   );
 
@@ -59,6 +87,33 @@ const stringifyKey = (
   return key == null ? '' : String(key);
 };
 
+const refuseUnsafeKey = (
+  state: ParserState,
+  name: string,
+  keyStart: number,
+  value: unknown
+): void => {
+  if (name === '__proto__') throw protoKeyError(state, keyStart);
+  if (isMapping(value)) throw prototypeKeyError(state, name, keyStart);
+};
+
+const definePrototypeKey = (
+  state: ParserState,
+  target: Record<string, unknown>,
+  name: string,
+  keyStart: number,
+  value: unknown
+): void => {
+  if (!state.allowUnsafeKeys) refuseUnsafeKey(state, name, keyStart, value);
+
+  Object.defineProperty(target, name, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+};
+
 export const setMapKey = (
   state: ParserState,
   target: Record<string, unknown>,
@@ -68,9 +123,9 @@ export const setMapKey = (
 ): void => {
   const name = stringifyKey(state, key, keyStart);
 
-  if (isPrototypeKey(name)) throw prototypeKeyError(state, name, keyStart);
   if (Object.hasOwn(target, name))
     throw duplicateKeyError(state, name, keyStart);
-
-  target[name] = value;
+  if (isPrototypeKey(name))
+    definePrototypeKey(state, target, name, keyStart, value);
+  else target[name] = value;
 };

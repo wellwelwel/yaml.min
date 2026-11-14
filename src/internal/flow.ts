@@ -1,3 +1,4 @@
+import type { YamlError } from '../error.js';
 import type {
   FlowCollection,
   NodeProperties,
@@ -19,11 +20,12 @@ import {
   CHAR_SPACE,
   CHAR_STAR,
   isBlank,
+  isFlowEntryEnd,
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
-import { syntaxError } from './errors.js';
+import { characterAt, quote, yamlError } from './errors.js';
 import { setMapKey } from './keys.js';
 import {
   countIndentSpaces,
@@ -36,6 +38,7 @@ import {
   parseDoubleQuoted,
   parsePlainScalar,
   parseSingleQuoted,
+  unindentedFlowLineError,
 } from './strings.js';
 import {
   checkCollectionTag,
@@ -47,6 +50,7 @@ import {
 const FLOW_SEQUENCE: FlowCollection = {
   name: 'flow sequence',
   open: '[',
+  close: ']',
   closeCode: CHAR_RIGHT_BRACKET,
   foreignCloseCode: CHAR_RIGHT_BRACE,
 };
@@ -54,6 +58,7 @@ const FLOW_SEQUENCE: FlowCollection = {
 const FLOW_MAPPING: FlowCollection = {
   name: 'flow mapping',
   open: '{',
+  close: '}',
   closeCode: CHAR_RIGHT_BRACE,
   foreignCloseCode: CHAR_RIGHT_BRACKET,
 };
@@ -78,18 +83,15 @@ const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
     return;
 
   if (isDocumentMarker(state, lineStart))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'UNEXPECTED_DOCUMENT_MARKER',
       'A document marker interrupts a flow collection: expected the collection to close before the "---" or "..." line',
       lineStart
     );
 
   if (indent <= ownerIndent)
-    throw syntaxError(
-      state,
-      `A flow collection line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`,
-      cursor
-    );
+    throw unindentedFlowLineError(state, ownerIndent, cursor);
 };
 
 const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
@@ -134,37 +136,30 @@ const readFlowNodeProperties = (
   return properties;
 };
 
-const isFlowTerminator = (state: ParserState): boolean => {
-  if (state.pos >= state.len) return true;
+const isFlowTerminator = (state: ParserState): boolean =>
+  state.pos >= state.len || isFlowEntryEnd(state.src.charCodeAt(state.pos));
 
-  const code = state.src.charCodeAt(state.pos);
-
-  return (
-    code === CHAR_COMMA ||
-    code === CHAR_RIGHT_BRACKET ||
-    code === CHAR_RIGHT_BRACE
-  );
-};
-
-const unclosedError = (
+const unclosedCollectionError = (
   state: ParserState,
   collection: FlowCollection,
   openedAt: number
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `Unclosed ${collection.name}: expected "${String.fromCharCode(collection.closeCode)}" to close the "${collection.open}" before the end of input`,
+    'UNTERMINATED_FLOW_COLLECTION',
+    `Unclosed ${collection.name}: expected "${collection.close}" to close the "${collection.open}" before the end of input`,
     openedAt
   );
 
-const unexpectedError = (
+const unexpectedCharacterError = (
   state: ParserState,
   collection: FlowCollection,
   expected: string
-): SyntaxError =>
-  syntaxError(
+): YamlError =>
+  yamlError(
     state,
-    `Unexpected "${state.src.charAt(state.pos)}" in a ${collection.name}: expected ${expected}`
+    'UNEXPECTED_CHARACTER',
+    `Unexpected ${quote(characterAt(state, state.pos))} in a ${collection.name}: expected ${expected}`
   );
 
 const skipToFlowBoundary = (
@@ -175,7 +170,8 @@ const skipToFlowBoundary = (
 ): number => {
   skipFlowSeparation(state, ownerIndent);
 
-  if (state.pos >= state.len) throw unclosedError(state, collection, openedAt);
+  if (state.pos >= state.len)
+    throw unclosedCollectionError(state, collection, openedAt);
 
   return state.src.charCodeAt(state.pos);
 };
@@ -194,10 +190,10 @@ const openFlowEntry = (
   }
 
   if (code === collection.foreignCloseCode || code === CHAR_COMMA)
-    throw unexpectedError(
+    throw unexpectedCharacterError(
       state,
       collection,
-      `an entry or "${String.fromCharCode(collection.closeCode)}"`
+      `an entry or "${collection.close}"`
     );
 
   return true;
@@ -212,10 +208,10 @@ const closeFlowEntry = (
   const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
   if (code !== CHAR_COMMA && code !== collection.closeCode)
-    throw unexpectedError(
+    throw unexpectedCharacterError(
       state,
       collection,
-      `"," or "${String.fromCharCode(collection.closeCode)}"`
+      `"," or "${collection.close}"`
     );
 
   state.pos++;

@@ -154,7 +154,7 @@ describe('Numerals keep the exact value the document wrote', () => {
     'a decimal integer with a leading zero': ['01234', 1234],
     'the largest finite exponent': ['1e308', 1e308],
   };
-  const unsafeIntegers = {
+  const inexactNumerals = {
     'one past the largest safe decimal integer': '9007199254740992',
     'one past the smallest safe decimal integer': '-9007199254740992',
     'a twenty-digit identifier': '12345678901234567890',
@@ -168,7 +168,7 @@ describe('Numerals keep the exact value the document wrote', () => {
       strict.equal(parse(input), expected));
   }
 
-  for (const [name, input] of Object.entries(unsafeIntegers)) {
+  for (const [name, input] of Object.entries(inexactNumerals)) {
     it(`keeps ${name} as text`, () => strict.equal(parse(input), input));
   }
 
@@ -177,6 +177,84 @@ describe('Numerals keep the exact value the document wrote', () => {
       parse('id: 12345678901234567890\nids: [9007199254740992, 7]\n'),
       { id: '12345678901234567890', ids: ['9007199254740992', 7] }
     ));
+});
+
+describe('The bigint option returns integers as BigInt', () => {
+  const integers = {
+    'a decimal integer': ['42', 42n],
+    'a negative decimal integer': ['-17', -17n],
+    'a signed positive decimal integer': ['+99', 99n],
+    'a decimal integer with a leading zero': ['01234', 1234n],
+    'a hexadecimal integer': ['0xDEADBEEF', 3735928559n],
+    'an octal integer': ['0o755', 493n],
+    'a twenty-digit identifier': [
+      '12345678901234567890',
+      12345678901234567890n,
+    ],
+    'a hexadecimal integer past 64 bits': [
+      '0x1ffffffffffffffff',
+      36893488147419103231n,
+    ],
+  };
+  const otherNumerals = {
+    'a float': ['1.5', 1.5],
+    'a float written with an exponent': ['1e3', 1000],
+    'a signed hexadecimal numeral': ['-0x10', '-0x10'],
+    'a float too large for a number': ['1e999', '1e999'],
+  };
+  const thousandDigits = '9'.repeat(1000);
+  const thousandAndOneDigits = '9'.repeat(1001);
+
+  for (const [name, [input, expected]] of Object.entries(integers)) {
+    it(`returns ${name} as a BigInt`, () =>
+      strict.equal(parse(input, { bigint: true }), expected));
+  }
+
+  for (const [name, [input, expected]] of Object.entries(otherNumerals)) {
+    it(`returns ${name} as it would without the option`, () =>
+      strict.equal(parse(input, { bigint: true }), expected));
+  }
+
+  it('returns an integer of 1,000 digits as a BigInt', () =>
+    strict.equal(parse(thousandDigits, { bigint: true }), 10n ** 1000n - 1n));
+
+  it('keeps an integer of 1,001 digits as text', () =>
+    strict.equal(
+      parse(thousandAndOneDigits, { bigint: true }),
+      thousandAndOneDigits
+    ));
+
+  it('returns integers inside collections as BigInt', () =>
+    strict.deepEqual(
+      parse('id: 12345678901234567890\nports: [80, 443]\nratio: 0.5\n', {
+        bigint: true,
+      }),
+      { id: 12345678901234567890n, ports: [80n, 443n], ratio: 0.5 }
+    ));
+
+  it('reads a tagged integer past the safe range as a BigInt', () =>
+    strict.equal(
+      parse('!!int 12345678901234567890', { bigint: true }),
+      12345678901234567890n
+    ));
+
+  it('rejects a tagged integer of 1,001 digits', () =>
+    strict.throws(
+      () => parse(`!!int ${thousandAndOneDigits}`, { bigint: true }),
+      {
+        code: 'TAG_MISMATCH',
+      }
+    ));
+
+  it('names integer keys by their text form', () =>
+    strict.throws(() => parse('0x10: a\n16: b\n', { bigint: true }), {
+      code: 'DUPLICATE_KEY',
+    }));
+
+  for (const bigint of ['true', 1]) {
+    it(`returns numbers when bigint is ${JSON.stringify(bigint)}`, () =>
+      strict.equal(parse('42', { bigint }), 42));
+  }
 });
 
 describe('Floats', () => {

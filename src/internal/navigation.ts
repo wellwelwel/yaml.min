@@ -67,14 +67,16 @@ export const skipSpaces = (state: ParserState): void => {
   while (isSpaceOrTab(state.src.charCodeAt(state.pos))) state.pos++;
 };
 
+export const skipToLineEnd = (state: ParserState): void => {
+  while (
+    state.pos < state.len &&
+    state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
+  )
+    state.pos++;
+};
+
 export const skipComment = (state: ParserState): void => {
-  if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_HASH) {
-    while (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) !== CHAR_LINE_FEED
-    )
-      state.pos++;
-  }
+  if (state.src.charCodeAt(state.pos) === CHAR_HASH) skipToLineEnd(state);
 };
 
 export const skipBlanksAndComments = (state: ParserState): void => {

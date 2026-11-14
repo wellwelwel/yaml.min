@@ -9,7 +9,10 @@ import { describe, it, strict } from 'poku';
 import { assertParsesTo, read } from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+const { parse, parseAll } = require('../../src/index.ts');
+const {
+  YamlError,
+}: typeof import('../../src/index.ts') = require('../../src/index.ts');
 
 describe('Nested structures', () => {
   it('mapping of sequences', () =>
@@ -74,7 +77,8 @@ describe('Complex real-world document', () => {
 });
 
 describe('Maximum nesting depth', () => {
-  const ceiling = 256;
+  const defaultLimit = 256;
+  const highestLimit = 400;
   const stackHeadroomInFrames = 300;
   const nestingShapes: Record<string, (levels: number) => string> = {
     'block sequences on separate lines': (levels) =>
@@ -122,9 +126,9 @@ describe('Maximum nesting depth', () => {
 
       return 'returned';
     } catch (error) {
-      if (!(error instanceof Error)) return typeof error;
+      if (!(error instanceof YamlError)) return typeof error;
 
-      return `${error.name} caused by ${error.cause instanceof Error ? error.cause.name : 'nothing'}`;
+      return `${error.code} caused by ${error.cause instanceof Error ? error.cause.name : 'nothing'}`;
     }
   };
 
@@ -146,23 +150,177 @@ describe('Maximum nesting depth', () => {
   };
 
   for (const [shape, nest] of Object.entries(nestingShapes)) {
-    it(`accepts ${shape} nested ${ceiling} levels deep`, () =>
-      strict.doesNotThrow(() => parse(nest(ceiling))));
+    it(`accepts ${shape} nested ${defaultLimit} levels deep by default`, () =>
+      strict.doesNotThrow(() => parse(nest(defaultLimit))));
 
-    it(`rejects ${shape} nested one level past the limit`, () =>
-      strict.throws(() => parse(nest(ceiling + 1)), SyntaxError));
+    it(`rejects ${shape} nested one level past the default limit`, () =>
+      strict.throws(() => parse(nest(defaultLimit + 1)), {
+        code: 'NESTING_TOO_DEEP',
+      }));
+
+    it(`accepts ${shape} nested ${highestLimit} levels deep at the highest limit allowed`, () =>
+      strict.doesNotThrow(() =>
+        parse(nest(highestLimit), { maxDepth: highestLimit })
+      ));
+
+    it(`rejects ${shape} nested one level past the highest limit allowed`, () =>
+      strict.throws(
+        () => parse(nest(highestLimit + 1), { maxDepth: highestLimit }),
+        { code: 'NESTING_TOO_DEEP' }
+      ));
   }
 
   for (const [name, document] of Object.entries(pathologicalDocuments)) {
-    it(`rejects ${name} with a syntax error`, () =>
-      strict.throws(() => parse(document), SyntaxError));
+    it(`rejects ${name} as nested too deep`, () =>
+      strict.throws(() => parse(document), { code: 'NESTING_TOO_DEEP' }));
   }
 
-  it('rejects nesting the remaining call stack cannot hold with a syntax error', () =>
+  it('rejects nesting the remaining call stack cannot hold with an engine limit error', () =>
     strict.equal(
       parseNearStackLimit(
-        nestingShapes['block mappings on separate lines'](ceiling)
+        nestingShapes['block mappings on separate lines'](defaultLimit)
       ),
-      'SyntaxError caused by RangeError'
+      'ENGINE_LIMIT caused by RangeError'
     ));
+});
+
+describe('The maxDepth option sets the nesting limit', () => {
+  const collectionDocuments = {
+    'a flow sequence': '[]',
+    'a flow mapping': '{}',
+    'a block mapping': 'a: 1\n',
+    'a block sequence': '- a\n',
+    'an empty tagged sequence': '!!seq\n',
+    'an empty tagged mapping': '!!map\n',
+  };
+  const emptyTaggedCollections = {
+    'an empty tagged sequence as a mapping value': {
+      document: 'a: !!seq\n',
+      parsed: { a: [] },
+    },
+    'an empty tagged mapping as a sequence entry': {
+      document: '- !!map\n',
+      parsed: [{}],
+    },
+  };
+  const invalidLimits: unknown[] = [
+    -1,
+    1.5,
+    401,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    '10',
+    10n,
+  ];
+
+  it('accepts nesting up to a lowered limit', () =>
+    strict.deepEqual(parse('[[x]]', { maxDepth: 2 }), [['x']]));
+
+  it('rejects nesting one level past a lowered limit', () =>
+    strict.throws(() => parse('[[[x]]]', { maxDepth: 2 }), {
+      code: 'NESTING_TOO_DEEP',
+    }));
+
+  it('accepts a scalar document at a limit of 0', () =>
+    strict.equal(parse('x', { maxDepth: 0 }), 'x'));
+
+  for (const [name, document] of Object.entries(collectionDocuments)) {
+    it(`rejects ${name} at a limit of 0`, () =>
+      strict.throws(() => parse(document, { maxDepth: 0 }), {
+        code: 'NESTING_TOO_DEEP',
+      }));
+  }
+
+  for (const [name, { document, parsed }] of Object.entries(
+    emptyTaggedCollections
+  )) {
+    it(`accepts ${name} at a limit of 2`, () =>
+      strict.deepEqual(parse(document, { maxDepth: 2 }), parsed));
+
+    it(`rejects ${name} at a limit of 1`, () =>
+      strict.throws(() => parse(document, { maxDepth: 1 }), {
+        code: 'NESTING_TOO_DEEP',
+      }));
+  }
+
+  it('applies the limit to every document of a stream', () =>
+    strict.throws(() => parseAll('[x]\n---\n[[x]]\n', { maxDepth: 1 }), {
+      code: 'NESTING_TOO_DEEP',
+    }));
+
+  it('accepts a stream whose documents all fit the limit', () =>
+    strict.deepEqual(parseAll('[x]\n---\n[y]\n', { maxDepth: 1 }), [
+      ['x'],
+      ['y'],
+    ]));
+
+  for (const limit of invalidLimits) {
+    it(`refuses the ${typeof limit} ${String(limit)} as a limit for parse`, () =>
+      strict.throws(() => parse('x', { maxDepth: limit }), TypeError));
+
+    it(`refuses the ${typeof limit} ${String(limit)} as a limit for parseAll`, () =>
+      strict.throws(() => parseAll('x', { maxDepth: limit }), TypeError));
+  }
+});
+
+describe('Aliases count the levels they repeat toward the nesting limit', () => {
+  const aliasedDocuments = {
+    'an alias to a flow sequence inside a flow sequence': {
+      document: 'a: &a [[x]]\nb: [*a]\n',
+      levels: 4,
+      parsed: { a: [['x']], b: [[['x']]] },
+    },
+    'an alias to a block sequence inside a block sequence': {
+      document: 'a: &a\n  - - x\nb:\n  - *a\n',
+      levels: 4,
+      parsed: { a: [['x']], b: [[['x']]] },
+    },
+    'an alias to a mapping as a flow mapping value': {
+      document: 'a: &a {k: {k: x}}\nb: {k: *a}\n',
+      levels: 4,
+      parsed: { a: { k: { k: 'x' } }, b: { k: { k: { k: 'x' } } } },
+    },
+    'an alias to a node that holds another alias': {
+      document: 'a: &a [x]\nb: &b [*a]\nc: [*b]\n',
+      levels: 4,
+      parsed: { a: ['x'], b: [['x']], c: [[['x']]] },
+    },
+    'an alias to a sequence with an anchored item after a deeper item': {
+      document: 'a: &a [[[x]], &i y]\nb: [*a]\n',
+      levels: 5,
+      parsed: { a: [[['x']], 'y'], b: [[[['x']], 'y']] },
+    },
+    'an alias to a scalar after a deeper sibling': {
+      document: 'x: [[[y]]]\na: &a z\nb: [*a]\n',
+      levels: 4,
+      parsed: { x: [[['y']]], a: 'z', b: ['z'] },
+    },
+    'an alias to an empty tagged sequence': {
+      document: 'a: &a !!seq\nb: [*a]\n',
+      levels: 3,
+      parsed: { a: [], b: [[]] },
+    },
+  };
+  const stackedAliases = (levelsAroundAlias: number): string =>
+    `a: &a ${'['.repeat(150)}x${']'.repeat(150)}\nb: ${'['.repeat(levelsAroundAlias)}*a${']'.repeat(levelsAroundAlias)}\n`;
+
+  for (const [name, { document, levels, parsed }] of Object.entries(
+    aliasedDocuments
+  )) {
+    it(`accepts ${name} at a limit of ${levels}`, () =>
+      strict.deepEqual(parse(document, { maxDepth: levels }), parsed));
+
+    it(`rejects ${name} at a limit of ${levels - 1}`, () =>
+      strict.throws(() => parse(document, { maxDepth: levels - 1 }), {
+        code: 'NESTING_TOO_DEEP',
+      }));
+  }
+
+  it('accepts an alias that stacks nesting to exactly the default limit', () =>
+    strict.doesNotThrow(() => parse(stackedAliases(105))));
+
+  it('rejects an alias that stacks nesting past the default limit while each node stays under it', () =>
+    strict.throws(() => parse(stackedAliases(106)), {
+      code: 'NESTING_TOO_DEEP',
+    }));
 });

@@ -6,7 +6,11 @@
 
 import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import {
+  assertParsesTo,
+  parseWithinTimeLimit,
+  read,
+} from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
 const { parse } = require('../../src/index.ts');
@@ -155,4 +159,13 @@ describe('A block scalar header is validated as a whole', () => {
 
   it('accepts the highest indentation digit', () =>
     strict.deepEqual(parse('k: |9\n           text\n'), { k: '  text\n' }));
+});
+
+await describe('A folded block scalar folds in time proportional to its length', async () => {
+  await it('folds 150,000 lines with more-indented lines among them within the time limit', async () => {
+    const input = `text: >\n${'  line\n    more indented\n  line\n'.repeat(50_000)}`;
+    const outcome = await parseWithinTimeLimit(input);
+
+    strict.equal(outcome, 'returned');
+  });
 });

@@ -1,3 +1,4 @@
+import type { YamlError } from '../error.js';
 import type { BlockScalarHeader, ParserState } from '../types.js';
 import {
   CHAR_0,
@@ -5,31 +6,28 @@ import {
   CHAR_9,
   CHAR_BACKSLASH,
   CHAR_COLON,
-  CHAR_COMMA,
   CHAR_DOUBLE_QUOTE,
   CHAR_HASH,
-  CHAR_LEFT_BRACE,
-  CHAR_LEFT_BRACKET,
   CHAR_LOWER_U,
   CHAR_LOWER_X,
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_PLUS,
-  CHAR_RIGHT_BRACE,
-  CHAR_RIGHT_BRACKET,
   CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
   CHAR_TAB,
   CHAR_UPPER_U,
   hexadecimalDigitValue,
   isBlank,
+  isFlowEntryEnd,
+  isFlowIndicator,
   isLineBreak,
   isSpaceOrTab,
   LONE_SURROGATE,
   MAX_CODE_POINT,
   SIMPLE_ESCAPE_MAP,
 } from './chars.js';
-import { syntaxError } from './errors.js';
+import { characterAt, quote, yamlError } from './errors.js';
 import {
   countIndentSpaces,
   isAtLineBreakOrEnd,
@@ -50,8 +48,9 @@ const trimEnd = (text: string): string => {
 
 const rejectDocumentMarker = (state: ParserState): void => {
   if (isDocumentMarker(state, state.pos))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'UNEXPECTED_DOCUMENT_MARKER',
       'A document marker interrupts a quoted scalar: expected the closing quote before the "---" or "..." line'
     );
 };
@@ -77,21 +76,51 @@ const foldQuotedLineBreaks = (state: ParserState): string => {
   return emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' ';
 };
 
+const truncatedEscapeError = (
+  state: ParserState,
+  escapeStart: number,
+  width: number
+): YamlError =>
+  yamlError(
+    state,
+    'INVALID_ESCAPE',
+    `The input ends inside the escape sequence ${quote(state.src.slice(escapeStart, state.pos))}: expected ${width} more character${width === 1 ? '' : 's'}`,
+    escapeStart
+  );
+
+const malformedEscapeError = (
+  state: ParserState,
+  escapeStart: number,
+  width: number
+): YamlError =>
+  yamlError(
+    state,
+    'INVALID_ESCAPE',
+    `The escape sequence ${quote(state.src.slice(escapeStart, state.pos))} is malformed: expected exactly ${width} hexadecimal digits after it`,
+    escapeStart
+  );
+
+const unknownEscapeError = (
+  state: ParserState,
+  escapeStart: number
+): YamlError =>
+  yamlError(
+    state,
+    'INVALID_ESCAPE',
+    `Unknown escape sequence ${quote(`\\${characterAt(state, escapeStart + 1)}`)}: expected one of \\0 \\a \\b \\t \\n \\v \\f \\r \\e \\" \\/ \\\\ \\N \\_ \\L \\P, an escaped space, tab, or line break, or a \\x, \\u, or \\U hexadecimal escape`,
+    escapeStart
+  );
+
 const requireEscapeWidth = (
   state: ParserState,
   escapeStart: number,
   width: number
 ): void => {
-  if (state.pos + width <= state.len) return;
-
-  throw syntaxError(
-    state,
-    `The input ends inside the escape sequence "${state.src.slice(escapeStart, state.pos)}": expected ${width} more character${width === 1 ? '' : 's'}`,
-    escapeStart
-  );
+  if (state.pos + width > state.len)
+    throw truncatedEscapeError(state, escapeStart, width);
 };
 
-const readHexEscape = (
+const readHexadecimalEscape = (
   state: ParserState,
   escapeStart: number,
   width: number
@@ -104,12 +133,7 @@ const readHexEscape = (
   for (let index = state.pos; index < digitsEnd; index++) {
     const digit = hexadecimalDigitValue(state.src.charCodeAt(index));
 
-    if (digit === -1)
-      throw syntaxError(
-        state,
-        `The escape sequence "${state.src.slice(escapeStart, state.pos)}" is malformed: expected exactly ${width} hexadecimal digits after it`,
-        escapeStart
-      );
+    if (digit === -1) throw malformedEscapeError(state, escapeStart, width);
 
     value = value * 16 + digit;
   }
@@ -120,7 +144,9 @@ const readHexEscape = (
 };
 
 const readUtf16Escapes = (state: ParserState, escapeStart: number): string => {
-  let decoded = String.fromCharCode(readHexEscape(state, escapeStart, 4));
+  let decoded = String.fromCharCode(
+    readHexadecimalEscape(state, escapeStart, 4)
+  );
 
   while (
     state.src.charCodeAt(state.pos) === CHAR_BACKSLASH &&
@@ -129,12 +155,15 @@ const readUtf16Escapes = (state: ParserState, escapeStart: number): string => {
     const nextEscapeStart = state.pos;
 
     state.pos += 2;
-    decoded += String.fromCharCode(readHexEscape(state, nextEscapeStart, 4));
+    decoded += String.fromCharCode(
+      readHexadecimalEscape(state, nextEscapeStart, 4)
+    );
   }
 
   if (LONE_SURROGATE.test(decoded))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_ESCAPE',
       'A "\\u" escape decodes to half of a surrogate pair: expected a high surrogate escape followed directly by a low surrogate escape',
       escapeStart
     );
@@ -146,11 +175,12 @@ const readCodePointEscape = (
   state: ParserState,
   escapeStart: number
 ): string => {
-  const codePoint = readHexEscape(state, escapeStart, 8);
+  const codePoint = readHexadecimalEscape(state, escapeStart, 8);
 
   if (codePoint > MAX_CODE_POINT)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_ESCAPE',
       `The "\\U" escape names 0x${codePoint.toString(16).toUpperCase()}: expected a code point no higher than 0x10FFFF`,
       escapeStart
     );
@@ -158,8 +188,9 @@ const readCodePointEscape = (
   const decoded = String.fromCodePoint(codePoint);
 
   if (LONE_SURROGATE.test(decoded))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_ESCAPE',
       'The "\\U" escape names half of a surrogate pair: expected a code point outside 0xD800 to 0xDFFF',
       escapeStart
     );
@@ -193,17 +224,13 @@ const readEscape = (state: ParserState): string => {
   if (simpleEscape !== undefined) return simpleEscape;
 
   if (code === CHAR_LOWER_X)
-    return String.fromCharCode(readHexEscape(state, escapeStart, 2));
+    return String.fromCharCode(readHexadecimalEscape(state, escapeStart, 2));
 
   if (code === CHAR_LOWER_U) return readUtf16Escapes(state, escapeStart);
 
   if (code === CHAR_UPPER_U) return readCodePointEscape(state, escapeStart);
 
-  throw syntaxError(
-    state,
-    `Unknown escape sequence "\\${state.src.charAt(escapeStart + 1)}": expected one of \\0 \\a \\b \\t \\n \\v \\f \\r \\e \\" \\/ \\\\ \\N \\_ \\L \\P, an escaped space, tab, or line break, or a \\x, \\u, or \\U hexadecimal escape`,
-    escapeStart
-  );
+  throw unknownEscapeError(state, escapeStart);
 };
 
 export const parseSingleQuoted = (state: ParserState): string => {
@@ -240,8 +267,9 @@ export const parseSingleQuoted = (state: ParserState): string => {
     captureStart = state.pos;
   }
 
-  throw syntaxError(
+  throw yamlError(
     state,
+    'UNTERMINATED_STRING',
     `Unterminated single-quoted scalar: expected a closing "'" before the end of input`,
     openingQuote
   );
@@ -279,12 +307,16 @@ export const parseDoubleQuoted = (state: ParserState): string => {
     captureStart = state.pos;
   }
 
-  throw syntaxError(
+  throw yamlError(
     state,
+    'UNTERMINATED_STRING',
     `Unterminated double-quoted scalar: expected a closing '"' before the end of input`,
     openingQuote
   );
 };
+
+const startsWithText = (line: string): boolean =>
+  line !== '' && !isSpaceOrTab(line.charCodeAt(0));
 
 const foldBlockLines = (contentLines: string[]): string => {
   let result = '';
@@ -299,7 +331,8 @@ const foldBlockLines = (contentLines: string[]): string => {
     }
 
     if (isSpaceOrTab(line.charCodeAt(0))) {
-      if (result.length > 0 && !result.endsWith('\n')) result += '\n';
+      if (lineIndex > 0 && startsWithText(contentLines[lineIndex - 1]))
+        result += '\n';
       result += line;
       if (lineIndex < contentLines.length - 1) result += '\n';
       previousLineMoreIndented = true;
@@ -349,8 +382,9 @@ const readBlockScalarHeader = (state: ParserState): BlockScalarHeader => {
     if (!(isChomp || isIndent)) break;
 
     if ((isChomp && chomp !== '') || (isIndent && explicitIndent !== 0))
-      throw syntaxError(
+      throw yamlError(
         state,
+        'INVALID_BLOCK_SCALAR_HEADER',
         'A block scalar header repeats an indicator: expected at most one chomping indicator ("+" or "-") and one indentation digit from 1 to 9'
       );
 
@@ -367,8 +401,9 @@ const readBlockScalarHeader = (state: ParserState): BlockScalarHeader => {
   if (state.pos > indicatorsEnd) skipComment(state);
 
   if (!isAtLineBreakOrEnd(state))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_BLOCK_SCALAR_HEADER',
       'A block scalar header holds an unexpected character: expected only a chomping indicator ("+" or "-"), an indentation digit from 1 to 9, and an optional comment'
     );
 
@@ -453,6 +488,7 @@ export const parseBlockScalar = (
 
   if (chomp === '-') return content;
   if (chomp === '+') return `${content}\n${'\n'.repeat(trailingEmptyLines)}`;
+
   return `${content}\n`;
 };
 
@@ -466,20 +502,8 @@ const endsPlainScalarAtColon = (
 
   const afterColon = state.src.charCodeAt(colonPosition + 1);
 
-  return (
-    afterColon === CHAR_SPACE ||
-    afterColon === CHAR_COMMA ||
-    afterColon === CHAR_RIGHT_BRACKET ||
-    afterColon === CHAR_RIGHT_BRACE
-  );
+  return afterColon === CHAR_SPACE || isFlowEntryEnd(afterColon);
 };
-
-const isFlowIndicator = (code: number): boolean =>
-  code === CHAR_COMMA ||
-  code === CHAR_RIGHT_BRACKET ||
-  code === CHAR_RIGHT_BRACE ||
-  code === CHAR_LEFT_BRACE ||
-  code === CHAR_LEFT_BRACKET;
 
 export const findPlainLineEnd = (
   state: ParserState,
@@ -515,6 +539,18 @@ const capturePlainLine = (state: ParserState, inFlow: boolean): string => {
   return state.src.slice(captureStart, state.pos);
 };
 
+export const unindentedFlowLineError = (
+  state: ParserState,
+  ownerIndent: number,
+  position: number
+): YamlError =>
+  yamlError(
+    state,
+    'INVALID_INDENTATION',
+    `A flow collection line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`,
+    position
+  );
+
 const isPlainContinuation = (
   state: ParserState,
   lineStart: number,
@@ -531,28 +567,18 @@ const isPlainContinuation = (
   if (code === CHAR_COLON && isBlankOrEnd(state, contentStart + 1))
     return false;
 
-  if (
-    inFlow &&
-    (code === CHAR_COMMA ||
-      code === CHAR_RIGHT_BRACKET ||
-      code === CHAR_RIGHT_BRACE)
-  )
-    return false;
+  if (inFlow && isFlowEntryEnd(code)) return false;
 
   const indent = countIndentSpaces(state, lineStart);
 
   if (indent > ownerIndent) return true;
 
-  if (inFlow)
-    throw syntaxError(
-      state,
-      `A flow collection line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`,
-      contentStart
-    );
+  if (inFlow) throw unindentedFlowLineError(state, ownerIndent, contentStart);
 
   if (state.src.charCodeAt(lineStart + indent) === CHAR_TAB)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_INDENTATION',
       'A tab indents a plain scalar line: expected spaces, since YAML forbids tabs as indentation',
       lineStart + indent
     );
@@ -568,7 +594,7 @@ export const parsePlainScalar = (
   ownerIndent: number,
   inFlow: boolean
 ): string => {
-  let result = capturePlainLine(state, inFlow);
+  let result = trimEnd(capturePlainLine(state, inFlow));
 
   while (state.pos < state.len) {
     if (!isLineBreak(state.src.charCodeAt(state.pos))) break;
@@ -588,10 +614,14 @@ export const parsePlainScalar = (
     if (!isPlainContinuation(state, lineStart, cursor, ownerIndent, inFlow))
       break;
 
-    result = `${trimEnd(result)}${emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' '}`;
     state.pos = cursor;
-    result += capturePlainLine(state, inFlow);
+
+    const line = trimEnd(capturePlainLine(state, inFlow));
+
+    if (line === '') break;
+
+    result += `${emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' '}${line}`;
   }
 
-  return trimEnd(result);
+  return result;
 };

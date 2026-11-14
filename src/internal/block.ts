@@ -18,7 +18,7 @@ import {
   isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
-import { syntaxError } from './errors.js';
+import { quote, yamlError } from './errors.js';
 import { parseFlowMap, parseFlowSequence } from './flow.js';
 import { collectionKeyError, setMapKey } from './keys.js';
 import {
@@ -129,8 +129,9 @@ const finishLine = (state: ParserState): void => {
   skipComment(state);
 
   if (!isAtLineBreakOrEnd(state))
-    throw syntaxError(
+    throw yamlError(
       state,
+      'UNEXPECTED_CONTENT',
       'Unexpected content after a value: expected a comment or the end of the line'
     );
 };
@@ -146,14 +147,16 @@ const enterBlockLine = (state: ParserState, indent: number): boolean => {
   }
 
   if (lineIndent > indent)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_INDENTATION',
       `A line is indented by ${lineIndent} spaces, which matches no open block collection: expected ${indent} spaces to continue the collection, or fewer to close it`
     );
 
   if (state.src.charCodeAt(state.pos) === CHAR_TAB)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'INVALID_INDENTATION',
       'A tab indents a block collection line: expected spaces, since YAML forbids tabs as indentation'
     );
 
@@ -199,7 +202,6 @@ const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
   skipSpaces(state);
 
   const contentStart = state.pos;
-  const contentColumn = indent + contentStart - dashStart;
   const properties = readNodeProperties(state, false);
 
   skipComment(state);
@@ -211,6 +213,7 @@ const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
       parseNextLineValue(state, indent, false, properties)
     );
 
+  const contentColumn = indent + contentStart - dashStart;
   const value = parseInlineValue(
     state,
     indent,
@@ -327,8 +330,9 @@ const parseMapEntry = (
   skipSpaces(state);
 
   if (state.src.charCodeAt(state.pos) !== CHAR_COLON)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'EXPECTED_MAPPING_ENTRY',
       'A line in a block mapping is not an entry: expected "key: value"',
       entryStart
     );
@@ -338,7 +342,7 @@ const parseMapEntry = (
   finishLine(state);
 };
 
-const parseExplicitKey = (
+const parseExplicitMapEntry = (
   state: ParserState,
   result: Record<string, unknown>,
   indent: number
@@ -368,8 +372,9 @@ const parseExplicitKey = (
   }
 
   if (state.pos < state.len && nextIndent > indent)
-    throw syntaxError(
+    throw yamlError(
       state,
+      'EXPECTED_MAPPING_ENTRY',
       `An explicit key is followed by an unexpected line: expected ":" at ${indent} spaces of indentation, or the next entry`
     );
 
@@ -393,13 +398,14 @@ const parseBlockMap = (
 
   while (enterBlockLine(state, indent)) {
     if (isExplicitKey(state)) {
-      parseExplicitKey(state, result, indent);
+      parseExplicitMapEntry(state, result, indent);
       continue;
     }
 
     if (isSequenceEntry(state))
-      throw syntaxError(
+      throw yamlError(
         state,
+        'EXPECTED_MAPPING_ENTRY',
         'A sequence entry appears among the entries of a block mapping: expected "key: value" at this indentation'
       );
 
@@ -427,9 +433,10 @@ const parseCompactSequence = (
   tag: NodeTag | undefined
 ): unknown[] => {
   if (tag !== undefined)
-    throw syntaxError(
+    throw yamlError(
       state,
-      `The tag ${tag.source} labels a sequence that starts on the same line: expected the tag alone on its line, with the sequence entries below it`,
+      'INVALID_TAG',
+      `The tag ${quote(tag.source)} labels a sequence that starts on the same line: expected the tag alone on its line, with the sequence entries below it`,
       tag.start
     );
 
@@ -455,23 +462,28 @@ const parseValueContent = (
   ownerIndent: number,
   lineStart: number,
   lineIndent: number,
-  own: NodeProperties | undefined,
-  inherited: NodeProperties | undefined
+  ownProperties: NodeProperties | undefined,
+  inheritedProperties: NodeProperties | undefined
 ): unknown => {
   if (isSequenceEntry(state)) {
     state.pos = lineStart;
-    return parseBlockSequence(state, lineIndent, false, inherited?.tag);
+    return parseBlockSequence(
+      state,
+      lineIndent,
+      false,
+      inheritedProperties?.tag
+    );
   }
 
   if (isExplicitKey(state) || opensImplicitKey(state)) {
     state.pos = lineStart;
-    return parseBlockMap(state, lineIndent, false, inherited?.tag);
+    return parseBlockMap(state, lineIndent, false, inheritedProperties?.tag);
   }
 
   return parseScalarOrFlowNode(
     state,
     ownerIndent,
-    mergeNodeProperties(state, inherited, own)?.tag
+    mergeNodeProperties(state, inheritedProperties, ownProperties)?.tag
   );
 };
 
@@ -480,30 +492,30 @@ export const parseValue = (
   ownerIndent: number,
   lineIndent: number,
   allowsIndentlessSequence: boolean,
-  inherited: NodeProperties | undefined
+  inheritedProperties: NodeProperties | undefined
 ): unknown => {
   const lineStart = state.pos - lineIndent;
-  const own = readNodeProperties(state, false);
+  const ownProperties = readNodeProperties(state, false);
 
   skipComment(state);
 
   return withAnchor(
     state,
-    own?.anchor,
+    ownProperties?.anchor,
     isAtLineBreakOrEnd(state)
       ? parseNextLineValue(
           state,
           ownerIndent,
           allowsIndentlessSequence,
-          mergeNodeProperties(state, inherited, own)
+          mergeNodeProperties(state, inheritedProperties, ownProperties)
         )
       : parseValueContent(
           state,
           ownerIndent,
           lineStart,
           lineIndent,
-          own,
-          inherited
+          ownProperties,
+          inheritedProperties
         )
   );
 };
