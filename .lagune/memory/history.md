@@ -162,3 +162,80 @@
 - **Category:** Interpretation conflict between parsers (CWE-436)
 - **What it is:** YAML ends a line with a line feed (LF), a carriage return followed by a line feed (CRLF), or a bare carriage return (CR). The parser honors all three everywhere except in comments and directive lines, which end only at a line feed. In a document written with bare CR line breaks, everything after the first comment or directive becomes part of it, and the parser returns what came before as if it were the whole document.
 - **Closed:** 2026-11-14
+
+### Plain scalars that start with an indicator
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** YAML reserves some characters as indicators: `@` and `` ` `` are held for future use, `%` starts directives, and `,`, `]`, and `}` structure flow collections. An unquoted value must not start with any of them, nor with `-`, `?`, or `:` unless a character that can continue the value follows. This parser accepts such values as text anyway, in mapping keys and values, list entries, explicit keys, and flow collections: `key: @foo`, `key: ]x`, `key: %x`, `[@x]`, and `[-]` all parse, and `key: - a` reads as the text `- a`, where conformant parsers reject the document.
+- **Closed:** 2026-11-14
+
+### Directive lines outside their place
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** Directives are `%` lines, such as `%YAML 1.2` or `%TAG`, that belong at the start of a line before a document, and the document after them must open with `---`. This parser accepts directives with no `---` after them (`%YAML 1.2` followed directly by `foo: 1`) and directives with no document at all. It never reads a `%YAML` directive, so an extra word, a comment with no space before it, or a second `%YAML` line for the same document all pass. Before the first document, it also silently skips an indented line that starts with `%` as if it were a directive, dropping whatever it held.
+- **Closed:** 2026-11-14
+
+### Comments that touch the preceding token
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** A `#` starts a comment only when a space, a tab, or the start of a line comes right before it. After a closing quote, a closing bracket or brace, or a comma inside a flow collection, this parser starts a comment at a `#` that touches the token, so `key: "value"# note`, `[ a, b ]#note`, and `[ a,#note` / `]` all parse with the text after the `#` dropped, where conformant parsers reject the document.
+- **Closed:** 2026-11-14
+
+### Anchor names and anchors on aliases
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** An anchor name may contain `:`, so `key: &an:chor value` labels `value` with the anchor `an:chor`. This parser ends the name at the first `:` and reads the rest as the value, returning `:chor value`. It also accepts an anchor placed on an alias, such as `&b *a`, which YAML forbids, and registers the new name for the aliased value.
+- **Closed:** 2026-11-14
+
+### Single-pair mappings in flow collections
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** Inside a flow sequence, an entry can be a mapping with a single pair, written implicitly as `[ foo: bar ]` or explicitly as `[ ? foo : bar ]`. This parser does not recognize the explicit `?` there, so `[ ? foo : bar ]` gives the key `? foo` instead of `foo`. It also accepts an implicit pair where YAML does not allow one, as the value of a flow mapping entry, so a missing comma such as `{ role: user` / `  admin: true }` parses as `{role: {"user admin": true}}` instead of failing.
+- **Closed:** 2026-11-14
+
+### Line folding in quoted scalars
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** When a quoted scalar spans lines, YAML drops the spaces and tabs at the end of each line before folding the line break into a space, and in a block collection each continuation line must be indented past its parent with spaces. This parser keeps the trailing whitespace, so `"folded ` / `to a space"` gives `folded  to a space` with two spaces, and it accepts continuation lines at any indentation, including none and a tab, as in `quoted: "a` / `b` / `c"`.
+- **Closed:** 2026-11-14
+
+### Block scalar indentation and folding
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** Literal (`|`) and folded (`>`) block scalars come back with different text than YAML specifies in several cases. A line holding only spaces loses the spaces beyond the block's indentation, a folded scalar adds or drops line breaks around more-indented and blank lines, and a keep (`+`) scalar can gain or lose trailing line breaks. Leading blank lines indented deeper than the first content line, and a tab where the block's indentation is expected, are accepted where YAML requires an error.
+- **Closed:** 2026-11-14
+
+### Tabs after block indicators
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** YAML lets a tab separate a block indicator from what follows, so a `-` followed by a tab and a value is a list entry. This parser only treats `-`, `?`, and `:` as indicators when a space or a line break follows them, so `-`, a tab, and `-1` read as text instead of the list `[-1]`. It also accepts tabs where YAML forbids them as indentation, such as before a nested entry in `- ` followed by a tab and `-`.
+- **Closed:** 2026-11-14
+
+### Document start and end markers
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** A `...` line ends a document without starting a new one, so `...` alone is an empty stream and a comment between two `...` lines adds no document. This parser reads an empty document at each such marker, so `parseAll` returns an extra `null` that shifts the position of every document after it. It also accepts a block mapping or list that starts on the `---` line itself, as in `--- a: b`, which YAML forbids.
+- **Closed:** 2026-11-14
+
+### Anchor on an implicit key relabels its collection
+
+- **Classification:** Medium
+- **Category:** Parser differential (CWE-436)
+- **What it is:** When a line starts with an anchor followed by a `key: value` pair, YAML 1.2 attaches the anchor to the key. This parser does that while it reads the mapping, then attaches the same anchor to the whole finished mapping. Aliases inside the mapping get the key, but aliases after it get the mapping. At the top level nothing follows, so the difference shows when the mapping is nested or is a list entry: for `outer:` / `  &a key: value` / `next: *a`, this parser returns `{key: value}` for `next`, where the specification and conformant parsers return the text `key`.
+- **Closed:** 2026-11-14
+
+### Implicit keys across lines or over 1,024 characters
+
+- **Classification:** Medium
+- **Category:** Parser differential through improper input validation (CWE-436, CWE-20)
+- **What it is:** A mapping key written without the `?` indicator must fit on one line and be at most 1,024 characters long. This parser accepts a quoted key that spans several lines (`"multi` / ` line": value`), which conformant parsers reject, and a key of any length, which the specification forbids.
+- **Closed:** 2026-11-14

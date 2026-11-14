@@ -13,6 +13,7 @@ import {
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_PLUS,
+  CHAR_QUESTION,
   CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
   CHAR_TAB,
@@ -21,6 +22,7 @@ import {
   isBlank,
   isFlowEntryEnd,
   isFlowIndicator,
+  isIndicator,
   isLineBreak,
   isSpaceOrTab,
   LONE_SURROGATE,
@@ -55,8 +57,30 @@ const rejectDocumentMarker = (state: ParserState): void => {
     );
 };
 
-const foldQuotedLineBreaks = (state: ParserState): string => {
+const requireQuotedLineIndent = (
+  state: ParserState,
+  lineStart: number,
+  ownerIndent: number
+): void => {
+  if (
+    isAtLineBreakOrEnd(state) ||
+    countIndentSpaces(state, lineStart) > ownerIndent
+  )
+    return;
+
+  throw yamlError(
+    state,
+    'INVALID_INDENTATION',
+    `A quoted scalar line is not indented past its block collection: expected more than ${ownerIndent} leading spaces`
+  );
+};
+
+const foldQuotedLineBreaks = (
+  state: ParserState,
+  ownerIndent: number
+): string => {
   let emptyLineCount = -1;
+  let lineStart = state.pos;
 
   while (state.pos < state.len) {
     const code = state.src.charCodeAt(state.pos);
@@ -64,6 +88,7 @@ const foldQuotedLineBreaks = (state: ParserState): string => {
     if (isLineBreak(code)) {
       state.pos += lineBreakWidth(state, state.pos);
       emptyLineCount++;
+      lineStart = state.pos;
       rejectDocumentMarker(state);
       continue;
     }
@@ -73,7 +98,28 @@ const foldQuotedLineBreaks = (state: ParserState): string => {
     state.pos++;
   }
 
+  requireQuotedLineIndent(state, lineStart, ownerIndent);
+
   return emptyLineCount > 0 ? '\n'.repeat(emptyLineCount) : ' ';
+};
+
+const foldQuotedLine = (
+  state: ParserState,
+  captureStart: number,
+  ownerIndent: number
+): string => {
+  let captureEnd = state.pos;
+
+  while (
+    captureEnd > captureStart &&
+    isSpaceOrTab(state.src.charCodeAt(captureEnd - 1))
+  )
+    captureEnd--;
+
+  return (
+    state.src.slice(captureStart, captureEnd) +
+    foldQuotedLineBreaks(state, ownerIndent)
+  );
 };
 
 const truncatedEscapeError = (
@@ -198,16 +244,22 @@ const readCodePointEscape = (
   return decoded;
 };
 
-const readEscapedLineBreak = (state: ParserState): string => {
+const readEscapedLineBreak = (
+  state: ParserState,
+  ownerIndent: number
+): string => {
   state.pos += lineBreakWidth(state, state.pos);
+
+  const lineStart = state.pos;
 
   rejectDocumentMarker(state);
   skipSpaces(state);
+  requireQuotedLineIndent(state, lineStart, ownerIndent);
 
   return '';
 };
 
-const readEscape = (state: ParserState): string => {
+const readEscape = (state: ParserState, ownerIndent: number): string => {
   const escapeStart = state.pos;
 
   state.pos++;
@@ -215,7 +267,7 @@ const readEscape = (state: ParserState): string => {
 
   const code = state.src.charCodeAt(state.pos);
 
-  if (isLineBreak(code)) return readEscapedLineBreak(state);
+  if (isLineBreak(code)) return readEscapedLineBreak(state, ownerIndent);
 
   const simpleEscape = code < 128 ? SIMPLE_ESCAPE_MAP[code] : undefined;
 
@@ -233,7 +285,10 @@ const readEscape = (state: ParserState): string => {
   throw unknownEscapeError(state, escapeStart);
 };
 
-export const parseSingleQuoted = (state: ParserState): string => {
+export const parseSingleQuoted = (
+  state: ParserState,
+  ownerIndent: number
+): string => {
   const openingQuote = state.pos;
 
   state.pos++;
@@ -249,13 +304,13 @@ export const parseSingleQuoted = (state: ParserState): string => {
       continue;
     }
 
-    result += state.src.slice(captureStart, state.pos);
-
     if (code !== CHAR_SINGLE_QUOTE) {
-      result += foldQuotedLineBreaks(state);
+      result += foldQuotedLine(state, captureStart, ownerIndent);
       captureStart = state.pos;
       continue;
     }
+
+    result += state.src.slice(captureStart, state.pos);
 
     if (state.src.charCodeAt(state.pos + 1) !== CHAR_SINGLE_QUOTE) {
       state.pos++;
@@ -275,7 +330,10 @@ export const parseSingleQuoted = (state: ParserState): string => {
   );
 };
 
-export const parseDoubleQuoted = (state: ParserState): string => {
+export const parseDoubleQuoted = (
+  state: ParserState,
+  ownerIndent: number
+): string => {
   const openingQuote = state.pos;
 
   state.pos++;
@@ -295,6 +353,12 @@ export const parseDoubleQuoted = (state: ParserState): string => {
       continue;
     }
 
+    if (isLineBreak(code)) {
+      result += foldQuotedLine(state, captureStart, ownerIndent);
+      captureStart = state.pos;
+      continue;
+    }
+
     result += state.src.slice(captureStart, state.pos);
 
     if (code === CHAR_DOUBLE_QUOTE) {
@@ -302,8 +366,7 @@ export const parseDoubleQuoted = (state: ParserState): string => {
       return result;
     }
 
-    result +=
-      code === CHAR_BACKSLASH ? readEscape(state) : foldQuotedLineBreaks(state);
+    result += readEscape(state, ownerIndent);
     captureStart = state.pos;
   }
 
@@ -315,59 +378,105 @@ export const parseDoubleQuoted = (state: ParserState): string => {
   );
 };
 
-const startsWithText = (line: string): boolean =>
-  line !== '' && !isSpaceOrTab(line.charCodeAt(0));
-
 const foldBlockLines = (contentLines: string[]): string => {
   let result = '';
+  let emptyLineCount = 0;
+  let hasText = false;
   let previousLineMoreIndented = false;
 
-  for (let lineIndex = 0; lineIndex < contentLines.length; lineIndex++) {
-    const line = contentLines[lineIndex];
-
+  for (const line of contentLines) {
     if (line === '') {
-      result += '\n';
+      emptyLineCount++;
       continue;
     }
 
-    if (isSpaceOrTab(line.charCodeAt(0))) {
-      if (lineIndex > 0 && startsWithText(contentLines[lineIndex - 1]))
-        result += '\n';
-      result += line;
-      if (lineIndex < contentLines.length - 1) result += '\n';
-      previousLineMoreIndented = true;
-      continue;
-    }
+    const isMoreIndented = isSpaceOrTab(line.charCodeAt(0));
 
-    if (previousLineMoreIndented) result += '\n';
-    else if (lineIndex > 0 && contentLines[lineIndex - 1] !== '') result += ' ';
+    if (isMoreIndented || previousLineMoreIndented)
+      result += '\n'.repeat(hasText ? emptyLineCount + 1 : emptyLineCount);
+    else if (emptyLineCount > 0) result += '\n'.repeat(emptyLineCount);
+    else if (hasText) result += ' ';
 
     result += line;
-    previousLineMoreIndented = false;
+    emptyLineCount = 0;
+    hasText = true;
+    previousLineMoreIndented = isMoreIndented;
   }
 
   return result;
 };
 
-const detectContentIndent = (state: ParserState): number => {
+const detectContentIndent = (
+  state: ParserState,
+  parentIndent: number
+): number => {
   let cursor = state.pos;
+  let widestBlankLineStart = cursor;
+  let widestBlankLineIndent = 0;
 
   while (cursor < state.len) {
     const lineStart = cursor;
+    const indent = countIndentSpaces(state, lineStart);
 
-    cursor += countIndentSpaces(state, lineStart);
+    cursor += indent;
 
     if (cursor >= state.len) return -1;
 
     const code = state.src.charCodeAt(cursor);
 
-    if (!isLineBreak(code))
-      return isDocumentMarker(state, lineStart) ? -1 : cursor - lineStart;
+    if (isLineBreak(code)) {
+      if (indent > widestBlankLineIndent) {
+        widestBlankLineIndent = indent;
+        widestBlankLineStart = lineStart;
+      }
 
-    cursor += lineBreakWidth(state, cursor);
+      cursor += lineBreakWidth(state, cursor);
+      continue;
+    }
+
+    if (isDocumentMarker(state, lineStart)) return -1;
+
+    if (indent <= parentIndent) {
+      if (code === CHAR_TAB)
+        throw yamlError(
+          state,
+          'INVALID_INDENTATION',
+          'A tab indents a block scalar line: expected spaces, since YAML forbids tabs as indentation',
+          cursor
+        );
+
+      return -1;
+    }
+
+    if (indent < widestBlankLineIndent)
+      throw yamlError(
+        state,
+        'INVALID_INDENTATION',
+        `A leading empty line of a block scalar holds ${widestBlankLineIndent} spaces, more than the ${indent} that indent its first content line: expected at most ${indent} spaces, or an indentation indicator in the header`,
+        widestBlankLineStart
+      );
+
+    return indent;
   }
 
   return -1;
+};
+
+const countBlankBlockLines = (state: ParserState): number => {
+  let cursor = state.pos;
+  let blankLineCount = 0;
+
+  while (cursor < state.len) {
+    cursor += countIndentSpaces(state, cursor);
+
+    if (cursor >= state.len) return blankLineCount + 1;
+    if (!isLineBreak(state.src.charCodeAt(cursor))) break;
+
+    cursor += lineBreakWidth(state, cursor);
+    blankLineCount++;
+  }
+
+  return blankLineCount;
 };
 
 const readBlockScalarHeader = (state: ParserState): BlockScalarHeader => {
@@ -425,12 +534,17 @@ const readBlockScalarLines = (
     state.pos += spaces;
 
     if (state.pos >= state.len) {
-      lines.push('');
+      if (spaces > contentIndent)
+        lines.push(state.src.slice(lineStart + contentIndent));
       break;
     }
 
     if (isAtLineBreakOrEnd(state)) {
-      lines.push('');
+      lines.push(
+        spaces > contentIndent
+          ? state.src.slice(lineStart + contentIndent, state.pos)
+          : ''
+      );
       state.pos += lineBreakWidth(state, state.pos);
       continue;
     }
@@ -440,13 +554,9 @@ const readBlockScalarLines = (
       break;
     }
 
-    const prefix =
-      spaces > contentIndent ? ' '.repeat(spaces - contentIndent) : '';
-    const lineContentStart = state.pos;
-
     while (!isAtLineBreakOrEnd(state)) state.pos++;
 
-    lines.push(prefix + state.src.slice(lineContentStart, state.pos));
+    lines.push(state.src.slice(lineStart + contentIndent, state.pos));
 
     if (state.pos < state.len) state.pos += lineBreakWidth(state, state.pos);
   }
@@ -466,9 +576,10 @@ export const parseBlockScalar = (
   const contentIndent =
     explicitIndent > 0
       ? Math.max(parentIndent, 0) + explicitIndent
-      : detectContentIndent(state);
+      : detectContentIndent(state, parentIndent);
 
-  if (contentIndent <= parentIndent) return chomp === '+' ? '\n' : '';
+  if (contentIndent <= parentIndent)
+    return chomp === '+' ? '\n'.repeat(countBlankBlockLines(state)) : '';
 
   const lines = readBlockScalarLines(state, contentIndent);
   let trailingEmptyLines = 0;
@@ -482,6 +593,10 @@ export const parseBlockScalar = (
     trailingEmptyLines > 0
       ? lines.slice(0, lines.length - trailingEmptyLines)
       : lines;
+
+  if (contentLines.length === 0)
+    return chomp === '+' ? '\n'.repeat(trailingEmptyLines) : '';
+
   const content = isLiteral
     ? contentLines.join('\n')
     : foldBlockLines(contentLines);
@@ -539,6 +654,35 @@ const capturePlainLine = (state: ParserState, inFlow: boolean): string => {
   return state.src.slice(captureStart, state.pos);
 };
 
+const isIndicatorSeparatorAt = (
+  state: ParserState,
+  position: number,
+  inFlow: boolean
+): boolean =>
+  isBlankOrEnd(state, position) ||
+  (inFlow && isFlowIndicator(state.src.charCodeAt(position)));
+
+const isSeparableIndicator = (code: number): boolean =>
+  code === CHAR_MINUS || code === CHAR_QUESTION || code === CHAR_COLON;
+
+const capturePlainStart = (state: ParserState, inFlow: boolean): string => {
+  const code = state.src.charCodeAt(state.pos);
+
+  if (!isIndicator(code)) return capturePlainLine(state, inFlow);
+  if (
+    isSeparableIndicator(code) &&
+    !isIndicatorSeparatorAt(state, state.pos + 1, inFlow)
+  )
+    return capturePlainLine(state, inFlow);
+  if (code === CHAR_COLON || code === CHAR_HASH) return '';
+
+  throw yamlError(
+    state,
+    'UNEXPECTED_CHARACTER',
+    `A plain scalar starts with the indicator ${quote(characterAt(state, state.pos))}: expected the scalar quoted, or text that does not start with an indicator`
+  );
+};
+
 export const unindentedFlowLineError = (
   state: ParserState,
   ownerIndent: number,
@@ -587,14 +731,14 @@ const isPlainContinuation = (
 };
 
 export const parsePlainKey = (state: ParserState): string =>
-  trimEnd(capturePlainLine(state, false));
+  trimEnd(capturePlainStart(state, false));
 
 export const parsePlainScalar = (
   state: ParserState,
   ownerIndent: number,
   inFlow: boolean
 ): string => {
-  let result = trimEnd(capturePlainLine(state, inFlow));
+  let result = trimEnd(capturePlainStart(state, inFlow));
 
   while (state.pos < state.len) {
     if (!isLineBreak(state.src.charCodeAt(state.pos))) break;

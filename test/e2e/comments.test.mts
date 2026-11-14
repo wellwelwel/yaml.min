@@ -2,10 +2,15 @@
  * Scenarios derived from the https://github.com/eemeli/yaml test suite:
  *   tests/doc/parse.ts, tests/doc/errors.ts,
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
+ * and from the https://github.com/yaml/yaml-test-suite cases 9JBA, CVW2, and SU5Z (MIT).
  */
 
-import { describe, it } from 'poku';
+import { createRequire } from 'node:module';
+import { describe, it, strict } from 'poku';
 import { assertParsesTo, read } from '../__helpers__/index.mts';
+
+const require = createRequire(import.meta.url);
+const { parse } = require('../../src/index.ts');
 
 describe('Comments', () => {
   it('before content', () =>
@@ -85,4 +90,45 @@ describe('A comment after a tab', () => {
     assertParsesTo(read('comments--explicit-key-tab-comment.yaml'), {
       key: 'val',
     }));
+});
+
+describe('A comment needs a space or a tab before its "#"', () => {
+  const touchingComments = {
+    'a closing double quote': 'key: "value"# invalid comment\n',
+    'a closing single quote': "key: 'value'# note\n",
+    'a closing flow sequence bracket': '---\n[ a, b, c, ]#invalid\n',
+    'a closing flow mapping brace in a block mapping': 'key: { a: 1 }# note\n',
+    'a comma between flow entries': '---\n[ a, b, c,#invalid\n]\n',
+    'an opening flow sequence bracket': '[# note\n a ]\n',
+  };
+  const separatedComments = {
+    'a space after a plain value': {
+      input: 'key: value # note\n',
+      expected: { key: 'value' },
+    },
+    'a space after a flow sequence': {
+      input: '[a, b] # note\n',
+      expected: ['a', 'b'],
+    },
+    'a tab after a double quote': {
+      input: 'key: "value"\t# note\n',
+      expected: { key: 'value' },
+    },
+    'a space after a comma between flow entries': {
+      input: '[ a, # note\n b ]\n',
+      expected: ['a', 'b'],
+    },
+  };
+
+  for (const [name, input] of Object.entries(touchingComments)) {
+    it(`rejects a "#" touching ${name}`, () =>
+      strict.throws(() => parse(input), { code: 'UNEXPECTED_CHARACTER' }));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(separatedComments)) {
+    it(`reads a comment after ${name}`, () => assertParsesTo(input, expected));
+  }
+
+  it('keeps a "#" inside plain text as part of the text', () =>
+    assertParsesTo('a#b: c#d\n', { 'a#b': 'c#d' }));
 });

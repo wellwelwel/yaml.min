@@ -77,6 +77,10 @@ export const SIMPLE_ESCAPE_MAP: (string | undefined)[] = Array.from(
   (_, code) => SIMPLE_ESCAPES[String.fromCharCode(code)]
 );
 
+const INDICATOR_CODES: ReadonlySet<number> = new Set(
+  Array.from('-?:,[]{}#&*!|>\'"%@`', (indicator) => indicator.charCodeAt(0))
+);
+
 export const isSpaceOrTab = (code: number): boolean =>
   code === CHAR_SPACE || code === CHAR_TAB;
 
@@ -95,6 +99,17 @@ export const isFlowIndicator = (code: number): boolean =>
   isFlowEntryEnd(code) ||
   code === CHAR_LEFT_BRACKET ||
   code === CHAR_LEFT_BRACE;
+
+export const isContentIndicator = (code: number): boolean =>
+  code === CHAR_SINGLE_QUOTE ||
+  code === CHAR_DOUBLE_QUOTE ||
+  code === CHAR_LEFT_BRACKET ||
+  code === CHAR_LEFT_BRACE ||
+  code === CHAR_PIPE ||
+  code === CHAR_GREATER_THAN ||
+  code === CHAR_STAR;
+
+export const isIndicator = (code: number): boolean => INDICATOR_CODES.has(code);
 
 export const hexadecimalDigitValue = (code: number): number => {
   if (code >= CHAR_0 && code <= CHAR_9) return code - CHAR_0;

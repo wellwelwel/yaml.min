@@ -6,7 +6,11 @@
 
 import { createRequire } from 'node:module';
 import { describe, it, strict } from 'poku';
-import { assertParsesTo, read } from '../__helpers__/index.mts';
+import {
+  assertParsesTo,
+  parseWithinTimeLimit,
+  read,
+} from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
 const { parse } = require('../../src/index.ts');
@@ -210,4 +214,104 @@ describe('Escapes never produce half of a surrogate pair', () => {
 
   it('decodes an astral character from an eight-digit escape', () =>
     strict.deepEqual(parse('k: "\\U0001F600"'), { k: '\u{1F600}' }));
+});
+
+describe('A quoted scalar folds a line break without the whitespace that ends the line', () => {
+  const foldedScalars: Record<string, [string, string]> = {
+    'spaces before a line break': [
+      'k: "folded \n  to a space"',
+      'folded to a space',
+    ],
+    'a tab before a line break': [
+      'k: "folded\t\n  to a space"',
+      'folded to a space',
+    ],
+    'spaces before a line break in a single-quoted scalar': [
+      "k: 'folded  \n  to a space'",
+      'folded to a space',
+    ],
+    'spaces before an empty line': [
+      'k: "to a line feed \t\n\n  kept"',
+      'to a line feed\nkept',
+    ],
+    'the spaces of a line that holds nothing else': ["k: '  \n  '", ' '],
+  };
+
+  for (const [name, [input, expected]] of Object.entries(foldedScalars)) {
+    it(`drops ${name}`, () => assertParsesTo(input, { k: expected }));
+  }
+
+  it('keeps a tab that an escape produced before a line break', () =>
+    assertParsesTo('k: "escaped\\t  \n  tab"', { k: 'escaped\t tab' }));
+
+  it('keeps the whitespace before an escaped line break', () =>
+    assertParsesTo('k: "kept \t\\\n  joined"', { k: 'kept \tjoined' }));
+
+  it('keeps the whitespace before the closing quote', () =>
+    assertParsesTo('k: "folded\n  then kept  "', { k: 'folded then kept  ' }));
+});
+
+describe('A quoted scalar continues only on lines indented past its block collection', () => {
+  const underIndented: Record<string, [string, number]> = {
+    'a double-quoted mapping value continued at column 0': [
+      'quoted: "a\nb\nc"',
+      2,
+    ],
+    'a single-quoted mapping value continued at column 0': [
+      "quoted: 'a\nb'",
+      2,
+    ],
+    'a mapping value continued after a tab': ['foo: "bar\n\tbaz"', 2],
+    'a nested mapping value continued at the column of its key': [
+      'outer:\n  inner: "a\n  b"',
+      3,
+    ],
+    'a sequence entry continued at the column of its dash': ['- "a\nb"', 2],
+    'a mapping value closed at column 0': ['k: "a\n  b\n"', 3],
+    'a mapping value continued at column 0 after an escaped line break': [
+      'k: "a\\\nb"',
+      2,
+    ],
+    'a flow sequence entry continued at the column of its block sequence': [
+      'a:\n  - ["x\n  y"]',
+      3,
+    ],
+  };
+
+  for (const [name, [input, line]] of Object.entries(underIndented)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parse(input), {
+        code: 'INVALID_INDENTATION',
+        line,
+      }));
+  }
+
+  const indented: Record<string, [string, unknown]> = {
+    'a mapping value continued one space past its key': [
+      'k: "a\n b"',
+      { k: 'a b' },
+    ],
+    'an empty line at column 0 inside a mapping value': [
+      'k: "a\n\n b"',
+      { k: 'a\nb' },
+    ],
+    'a tab after the indentation of a continuation line': [
+      'k: "a\n \tb"',
+      { k: 'a b' },
+    ],
+    'a top-level scalar continued at column 0': ['"a\nb"', 'a b'],
+  };
+
+  for (const [name, [input, expected]] of Object.entries(indented)) {
+    it(`accepts ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
+await describe('A quoted scalar folds in time proportional to its length', async () => {
+  await it('folds 200,000 lines that end in whitespace within the time limit', async () => {
+    const input = `k: "${'text \t \n  '.repeat(200_000)}end"`;
+    const outcome = await parseWithinTimeLimit(input);
+
+    strict.equal(outcome, 'returned');
+  });
 });

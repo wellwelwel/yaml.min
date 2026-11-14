@@ -2,6 +2,7 @@
  * Scenarios derived from the https://github.com/eemeli/yaml test suite:
  *   tests/doc/parse.ts, tests/doc/errors.ts,
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
+ * and from the https://github.com/yaml/yaml-test-suite cases CT4Q and T833 (MIT).
  */
 
 import { createRequire } from 'node:module';
@@ -178,4 +179,57 @@ describe('A flow collection cut short by the end of input is rejected', () => {
   for (const [name, input] of Object.entries(truncatedCollections)) {
     it(`rejects ${name}`, () => strict.throws(() => parse(input), SyntaxError));
   }
+});
+
+describe('Explicit single pairs in flow sequences', () => {
+  const explicitPairs = {
+    'a key and a value': {
+      input: '[ ? foo : bar ]',
+      expected: [{ foo: 'bar' }],
+    },
+    'a key spread over two lines': {
+      input: '[\n? foo\n bar : baz\n]\n',
+      expected: [{ 'foo bar': 'baz' }],
+    },
+    'a key with no value': { input: '[ ? foo ]', expected: [{ foo: null }] },
+    'a pair followed by another entry': {
+      input: '[ ? foo : bar, baz ]',
+      expected: [{ foo: 'bar' }, 'baz'],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(explicitPairs)) {
+    it(`reads ${name} without the "?" in the key`, () =>
+      assertParsesTo(input, expected));
+  }
+
+  it('guards the key like any other mapping key', () =>
+    strict.throws(() => parse('[ ? __proto__ : x ]'), { code: 'UNSAFE_KEY' }));
+
+  it('counts as a nesting level', () => {
+    const input = '[ ? a : x ]';
+
+    strict.doesNotThrow(() => parse(input, { maxDepth: 2 }));
+    strict.throws(() => parse(input, { maxDepth: 1 }), {
+      code: 'NESTING_TOO_DEEP',
+    });
+  });
+});
+
+describe('A pair never starts inside the value of another pair', () => {
+  const missingCommas = {
+    'a flow mapping entry on the line after a value':
+      '---\n{\n foo: 1\n bar: 2 }\n',
+    'a flow mapping entry continuing a value on its line':
+      '{ role: user\n  admin: true }',
+    'a second colon in a flow mapping entry': '{ a: b: c }',
+    'a second colon in a flow sequence pair': '[ a: b: c ]',
+  };
+
+  for (const [name, input] of Object.entries(missingCommas)) {
+    it(`rejects ${name}`, () => strict.throws(() => parse(input), SyntaxError));
+  }
+
+  it('still reads a pair inside a flow sequence held by a flow mapping', () =>
+    assertParsesTo('{ a: [b: c] }', { a: [{ b: 'c' }] }));
 });

@@ -296,10 +296,10 @@ try {
 | `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                                      |
 | `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                                    |
 | `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                             |
-| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry.                                                                                                 |
-| `INVALID_ALIAS`                | An alias has no anchor name after `*`.                                                                                                                 |
+| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or puts its `:` over 1,024 characters after its start.           |
+| `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                           |
 | `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                           |
-| `INVALID_DIRECTIVE`            | A `%TAG` directive is malformed.                                                                                                                       |
+| `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                            |
 | `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                             |
 | `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                             |
 | `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                                      |
@@ -308,7 +308,7 @@ try {
 | `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                             |
 | `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                                       |
 | `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                                      |
-| `UNEXPECTED_CHARACTER`         | A flow collection holds a character where an entry, a comma, or its closing bracket belongs.                                                           |
+| `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.                      |
 | `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                                   |
 | `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection.                                                                                 |
 | `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                                       |

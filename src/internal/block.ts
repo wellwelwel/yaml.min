@@ -14,14 +14,15 @@ import {
   CHAR_SPACE,
   CHAR_STAR,
   CHAR_TAB,
-  isLineBreak,
+  isContentIndicator,
   isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
 import { quote, yamlError } from './errors.js';
 import { parseFlowMap, parseFlowSequence } from './flow.js';
-import { collectionKeyError, setMapKey } from './keys.js';
+import { checkImplicitKey, collectionKeyError, setMapKey } from './keys.js';
 import {
+  countIndentSpaces,
   isAtLineBreakOrEnd,
   isBlankOrEnd,
   isDocumentMarker,
@@ -46,14 +47,9 @@ import {
   resolveTextScalar,
 } from './tags.js';
 
-const isIndicatorAt = (state: ParserState, indicatorCode: number): boolean => {
-  if (state.src.charCodeAt(state.pos) !== indicatorCode) return false;
-  if (state.pos + 1 >= state.len) return true;
-
-  const nextCode = state.src.charCodeAt(state.pos + 1);
-
-  return nextCode === CHAR_SPACE || isLineBreak(nextCode);
-};
+const isIndicatorAt = (state: ParserState, indicatorCode: number): boolean =>
+  state.src.charCodeAt(state.pos) === indicatorCode &&
+  isBlankOrEnd(state, state.pos + 1);
 
 const isSequenceEntry = (state: ParserState): boolean =>
   isIndicatorAt(state, CHAR_MINUS);
@@ -103,15 +99,6 @@ const isQuotedMapKey = (state: ParserState, quoteCharCode: number): boolean => {
 const hasMappingIndicatorInLine = (state: ParserState): boolean =>
   state.src.charCodeAt(findPlainLineEnd(state, state.pos, false)) ===
   CHAR_COLON;
-
-const isContentIndicator = (code: number): boolean =>
-  code === CHAR_SINGLE_QUOTE ||
-  code === CHAR_DOUBLE_QUOTE ||
-  code === CHAR_LEFT_BRACKET ||
-  code === CHAR_LEFT_BRACE ||
-  code === CHAR_PIPE ||
-  code === CHAR_GREATER_THAN ||
-  code === CHAR_STAR;
 
 const opensImplicitKey = (state: ParserState): boolean => {
   const code = state.src.charCodeAt(state.pos);
@@ -195,8 +182,12 @@ const parseNextLineValue = (
     : resolveEmptyNode(state, properties?.tag);
 };
 
-const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
-  const dashStart = state.pos;
+const parseIndicatedNode = (
+  state: ParserState,
+  indent: number,
+  allowsIndentlessSequence: boolean
+): unknown => {
+  const indicatorStart = state.pos;
 
   state.pos++;
   skipSpaces(state);
@@ -210,21 +201,20 @@ const parseSequenceEntry = (state: ParserState, indent: number): unknown => {
     return withAnchor(
       state,
       properties?.anchor,
-      parseNextLineValue(state, indent, false, properties)
+      parseNextLineValue(state, indent, allowsIndentlessSequence, properties)
     );
 
-  const contentColumn = indent + contentStart - dashStart;
   const value = parseInlineValue(
     state,
     indent,
-    contentColumn,
+    indicatorStart,
     contentStart,
-    properties?.tag
+    properties
   );
 
   finishLine(state);
 
-  return withAnchor(state, properties?.anchor, value);
+  return value;
 };
 
 const parseBlockSequence = (
@@ -238,7 +228,7 @@ const parseBlockSequence = (
 
   const result: unknown[] = [];
 
-  if (isInline) result.push(parseSequenceEntry(state, indent));
+  if (isInline) result.push(parseIndicatedNode(state, indent, false));
 
   while (enterBlockLine(state, indent)) {
     if (!isSequenceEntry(state)) {
@@ -246,7 +236,7 @@ const parseBlockSequence = (
       break;
     }
 
-    result.push(parseSequenceEntry(state, indent));
+    result.push(parseIndicatedNode(state, indent, false));
   }
 
   leaveCollection(state);
@@ -262,9 +252,9 @@ const parseScalarOrFlowNode = (
   const code = state.src.charCodeAt(state.pos);
 
   if (code === CHAR_SINGLE_QUOTE)
-    return resolveTextScalar(state, tag, parseSingleQuoted(state));
+    return resolveTextScalar(state, tag, parseSingleQuoted(state, ownerIndent));
   if (code === CHAR_DOUBLE_QUOTE)
-    return resolveTextScalar(state, tag, parseDoubleQuoted(state));
+    return resolveTextScalar(state, tag, parseDoubleQuoted(state, ownerIndent));
   if (code === CHAR_LEFT_BRACKET)
     return parseFlowSequence(state, ownerIndent, tag);
   if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
@@ -279,7 +269,7 @@ const parseScalarOrFlowNode = (
   );
 };
 
-const parseMapValue = (state: ParserState, indent: number): unknown => {
+export const parseMapValue = (state: ParserState, indent: number): unknown => {
   const properties = readNodeProperties(state, false);
 
   skipComment(state);
@@ -301,9 +291,9 @@ const parseMapKey = (
   const keyCode = state.src.charCodeAt(state.pos);
 
   if (keyCode === CHAR_SINGLE_QUOTE)
-    return resolveTextScalar(state, tag, parseSingleQuoted(state));
+    return resolveTextScalar(state, tag, parseSingleQuoted(state, indent));
   if (keyCode === CHAR_DOUBLE_QUOTE)
-    return resolveTextScalar(state, tag, parseDoubleQuoted(state));
+    return resolveTextScalar(state, tag, parseDoubleQuoted(state, indent));
   if (keyCode === CHAR_LEFT_BRACKET)
     return parseFlowSequence(state, indent, tag);
   if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent, tag);
@@ -337,6 +327,7 @@ const parseMapEntry = (
       entryStart
     );
 
+  checkImplicitKey(state, entryStart);
   skipIndicator(state);
   setMapKey(state, result, key, entryStart, parseMapValue(state, indent));
   finishLine(state);
@@ -364,8 +355,13 @@ const parseExplicitMapEntry = (
   const nextIndent = skipNewlinesAndComments(state);
 
   if (nextIndent === indent && isMappingValue(state)) {
-    skipIndicator(state);
-    setMapKey(state, result, key, keyStart, parseMapValue(state, indent));
+    setMapKey(
+      state,
+      result,
+      key,
+      keyStart,
+      parseIndicatedNode(state, indent, true)
+    );
     finishLine(state);
 
     return;
@@ -443,18 +439,61 @@ const parseCompactSequence = (
   return parseBlockSequence(state, column, true, undefined);
 };
 
+const compactCollectionColumn = (
+  state: ParserState,
+  indent: number,
+  indicatorStart: number,
+  contentStart: number
+): number => {
+  const separationStart = indicatorStart + 1;
+  const spacesEnd = separationStart + countIndentSpaces(state, separationStart);
+
+  if (spacesEnd < contentStart)
+    throw yamlError(
+      state,
+      'INVALID_INDENTATION',
+      'A tab separates a block indicator from the collection that starts after it on the same line: expected spaces, since YAML forbids tabs as indentation',
+      spacesEnd
+    );
+
+  return indent + contentStart - indicatorStart;
+};
+
 const parseInlineValue = (
   state: ParserState,
   ownerIndent: number,
-  column: number,
+  indicatorStart: number,
   contentStart: number,
-  tag: NodeTag | undefined
+  properties: NodeProperties | undefined
 ): unknown => {
-  if (isSequenceEntry(state)) return parseCompactSequence(state, column, tag);
-  if (opensImplicitKey(state))
-    return parseCompactMap(state, column, contentStart);
+  if (isSequenceEntry(state))
+    return withAnchor(
+      state,
+      properties?.anchor,
+      parseCompactSequence(
+        state,
+        compactCollectionColumn(
+          state,
+          ownerIndent,
+          indicatorStart,
+          contentStart
+        ),
+        properties?.tag
+      )
+    );
 
-  return parseScalarOrFlowNode(state, ownerIndent, tag);
+  if (opensImplicitKey(state))
+    return parseCompactMap(
+      state,
+      compactCollectionColumn(state, ownerIndent, indicatorStart, contentStart),
+      contentStart
+    );
+
+  return withAnchor(
+    state,
+    properties?.anchor,
+    parseScalarOrFlowNode(state, ownerIndent, properties?.tag)
+  );
 };
 
 const parseValueContent = (
@@ -480,10 +519,14 @@ const parseValueContent = (
     return parseBlockMap(state, lineIndent, false, inheritedProperties?.tag);
   }
 
-  return parseScalarOrFlowNode(
+  return withAnchor(
     state,
-    ownerIndent,
-    mergeNodeProperties(state, inheritedProperties, ownProperties)?.tag
+    ownProperties?.anchor,
+    parseScalarOrFlowNode(
+      state,
+      ownerIndent,
+      mergeNodeProperties(state, inheritedProperties, ownProperties)?.tag
+    )
   );
 };
 
@@ -499,23 +542,24 @@ export const parseValue = (
 
   skipComment(state);
 
+  if (!isAtLineBreakOrEnd(state))
+    return parseValueContent(
+      state,
+      ownerIndent,
+      lineStart,
+      lineIndent,
+      ownProperties,
+      inheritedProperties
+    );
+
   return withAnchor(
     state,
     ownProperties?.anchor,
-    isAtLineBreakOrEnd(state)
-      ? parseNextLineValue(
-          state,
-          ownerIndent,
-          allowsIndentlessSequence,
-          mergeNodeProperties(state, inheritedProperties, ownProperties)
-        )
-      : parseValueContent(
-          state,
-          ownerIndent,
-          lineStart,
-          lineIndent,
-          ownProperties,
-          inheritedProperties
-        )
+    parseNextLineValue(
+      state,
+      ownerIndent,
+      allowsIndentlessSequence,
+      mergeNodeProperties(state, inheritedProperties, ownProperties)
+    )
   );
 };

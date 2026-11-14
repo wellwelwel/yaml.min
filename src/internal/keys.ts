@@ -1,6 +1,9 @@
 import type { YamlError } from '../error.js';
 import type { ParserState } from '../types.js';
+import { isLineBreak } from './chars.js';
 import { quote, yamlError } from './errors.js';
+
+const MAX_IMPLICIT_KEY_LENGTH = 1024;
 
 const PROTOTYPE_KEYS: ReadonlySet<string> = new Set([
   '__proto__',
@@ -75,6 +78,40 @@ const duplicateKeyError = (
     `The mapping key ${quote(name)} appears more than once in the same mapping: expected every key of a mapping to be unique`,
     keyStart
   );
+
+const spansLines = (
+  state: ParserState,
+  start: number,
+  end: number
+): boolean => {
+  for (let cursor = start; cursor < end; cursor++)
+    if (isLineBreak(state.src.charCodeAt(cursor))) return true;
+
+  return false;
+};
+
+export const checkImplicitKey = (
+  state: ParserState,
+  keyStart: number
+): void => {
+  const colonOffset = state.pos - keyStart;
+
+  if (colonOffset > MAX_IMPLICIT_KEY_LENGTH)
+    throw yamlError(
+      state,
+      'EXPECTED_MAPPING_ENTRY',
+      `An implicit key puts its ":" ${colonOffset} characters after its start: expected at most ${MAX_IMPLICIT_KEY_LENGTH}, or "?" before a longer key`,
+      keyStart
+    );
+
+  if (spansLines(state, keyStart, state.pos))
+    throw yamlError(
+      state,
+      'EXPECTED_MAPPING_ENTRY',
+      'An implicit key spans more than one line: expected the key and its ":" on one line, or "?" before a key that spans lines',
+      keyStart
+    );
+};
 
 const stringifyKey = (
   state: ParserState,

@@ -58,12 +58,14 @@ export type ParserState = {
   anchors: {
     nodes: Map<string, AnchoredNode | null>;
     expansion: number;
+    pending: AnchorDeclaration | undefined;
   };
   tagHandles: Map<string, string>;
 };
 
 export type AnchorDeclaration = {
   name: string;
+  depth: number;
   contentStart: number;
   expansionAtStart: number;
 };

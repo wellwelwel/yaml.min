@@ -89,8 +89,12 @@ describe('Maximum nesting depth', () => {
     'flow sequences': (levels) => `${'['.repeat(levels)}x${']'.repeat(levels)}`,
     'flow mappings as values': (levels) =>
       `${'{a: '.repeat(levels)}x${'}'.repeat(levels)}`,
-    'implicit pairs in a flow sequence': (levels) =>
-      `[${'a: '.repeat(levels - 1)}x]`,
+    'implicit pairs in a flow sequence': (levels) => {
+      const pairs = Math.floor(levels / 2);
+      const innermost = levels % 2 === 0 ? 'x' : '[x]';
+
+      return `${'[a: '.repeat(pairs)}${innermost}${']'.repeat(pairs)}`;
+    },
     'sequences of mappings sharing their indentation': (levels) => {
       const lastLine = Math.ceil(levels / 2) - 1;
       const innermost = levels % 2 === 0 ? 'a: x' : 'x';

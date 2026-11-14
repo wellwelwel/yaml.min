@@ -313,7 +313,7 @@ export const isTagDirective = (state: ParserState): boolean =>
   state.src.startsWith(TAG_DIRECTIVE, state.pos) &&
   isSpaceOrTab(state.src.charCodeAt(state.pos + TAG_DIRECTIVE.length));
 
-const readDirectiveToken = (state: ParserState): string => {
+export const readDirectiveToken = (state: ParserState): string => {
   const start = state.pos;
 
   while (state.pos < state.len && !isBlank(state.src.charCodeAt(state.pos)))

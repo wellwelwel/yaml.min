@@ -270,7 +270,7 @@ describe('Mapping keys named after prototype properties', () => {
     'single-quoted': (name) => `'${name}'`,
     'with an escape': (name) =>
       `"\\x${name.charCodeAt(0).toString(16)}${name.slice(1)}"`,
-    'through an alias': () => '*name',
+    'through an alias': () => '*name ',
   };
   const keyForms: Record<string, KeyForm> = {
     'a block mapping key': {
@@ -449,4 +449,141 @@ describe('Mapping keys named after prototype properties', () => {
       first: '__proto__',
       rest: ['constructor', 'prototype'],
     }));
+});
+
+describe('An anchor labels the implicit key on its line, not the mapping', () => {
+  const keyAnchors = {
+    'a top-level mapping': {
+      input: '&a key: value\nother: *a\n',
+      expected: { key: 'value', other: 'key' },
+    },
+    'a nested mapping': {
+      input: 'outer:\n  &a key: value\nnext: *a\n',
+      expected: { outer: { key: 'value' }, next: 'key' },
+    },
+    'a mapping in a sequence entry': {
+      input: '- &a key: value\n- *a\n',
+      expected: [{ key: 'value' }, 'key'],
+    },
+    'a mapping in a nested sequence entry': {
+      input: '- - &a key: value\n- *a\n',
+      expected: [[{ key: 'value' }], 'key'],
+    },
+    'a mapping in an explicit value': {
+      input: '? a\n: &a key: value\nb: *a\n',
+      expected: { a: { key: 'value' }, b: 'key' },
+    },
+    'a single-pair mapping in a flow sequence': {
+      input: '[&a key: value, *a]',
+      expected: [{ key: 'value' }, 'key'],
+    },
+  };
+  const mappingAnchors = {
+    'a nested mapping': {
+      input: 'outer:\n  &m\n  key: value\nnext: *m\n',
+      expected: { outer: { key: 'value' }, next: { key: 'value' } },
+    },
+    'a mapping in a sequence entry': {
+      input: '- &m\n  key: value\n- *m\n',
+      expected: [{ key: 'value' }, { key: 'value' }],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(keyAnchors)) {
+    it(`labels the first key of ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(mappingAnchors)) {
+    it(`labels ${name} when a line break follows the anchor`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
+describe('An implicit key ends on the line where it starts', () => {
+  const multilineKeys: Record<string, KeyCase> = {
+    'a double-quoted key': {
+      rejected: '"a\\nb": 1\n"c\n d": 1\n',
+      accepted: '"a\\nb": 1\n? "c\n d"\n: 1\n',
+      parsed: { 'a\nb': 1, 'c d': 1 },
+    },
+    'a single-quoted key': {
+      rejected: "'a\\nb': 1\n'c\n d': 1\n",
+      accepted: "'a\\nb': 1\n? 'c\n d'\n: 1\n",
+      parsed: { 'a\\nb': 1, 'c d': 1 },
+    },
+    'a quoted key in a mapping inside nested sequence entries': {
+      rejected: '- - "bar\n     bar": x\n',
+      accepted: '- - "bar bar": x\n',
+      parsed: [[{ 'bar bar': 'x' }]],
+    },
+    'a plain key of a pair in a flow sequence': {
+      rejected: '[ multi\n  line: value ]\n',
+      accepted: '[ multi line: value ]\n',
+      parsed: [{ 'multi line': 'value' }],
+    },
+    'an anchored key of a pair in a flow sequence': {
+      rejected: '[ &a\n  key: value ]\n',
+      accepted: '[ &a key: value ]\n',
+      parsed: [{ key: 'value' }],
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    multilineKeys
+  )) {
+    it(`rejects ${name} that spans lines`, () =>
+      strict.throws(() => parse(rejected), { code: 'EXPECTED_MAPPING_ENTRY' }));
+
+    it(`accepts ${name} written after "?" or on one line`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+
+  it('accepts a flow mapping key that spans lines', () =>
+    assertParsesTo('{ multi\n  line: value }\n', { 'multi line': 'value' }));
+});
+
+describe('An implicit key puts its ":" at most 1,024 characters after its start', () => {
+  const longestKey = 'k'.repeat(1024);
+  const tooLongKey = 'k'.repeat(1025);
+  const keyLengths: Record<string, KeyCase> = {
+    'a block mapping key': {
+      rejected: `${tooLongKey}: value\n`,
+      accepted: `${longestKey}: value\n`,
+      parsed: { [longestKey]: 'value' },
+    },
+    'a block mapping key padded with spaces': {
+      rejected: `${'k'.repeat(1000)}${' '.repeat(25)}: value\n`,
+      accepted: `${'k'.repeat(1000)}${' '.repeat(24)}: value\n`,
+      parsed: { ['k'.repeat(1000)]: 'value' },
+    },
+    'a key of a pair in a flow sequence': {
+      rejected: `[${tooLongKey}: value]`,
+      accepted: `[${longestKey}: value]`,
+      parsed: [{ [longestKey]: 'value' }],
+    },
+    'an anchored block mapping key': {
+      rejected: `&a ${'k'.repeat(1022)}: value\n`,
+      accepted: `&a ${'k'.repeat(1021)}: value\n`,
+      parsed: { ['k'.repeat(1021)]: 'value' },
+    },
+    'an anchored key of a pair in a flow sequence': {
+      rejected: `[&a ${'k'.repeat(1022)}: value]`,
+      accepted: `[&a ${'k'.repeat(1021)}: value]`,
+      parsed: [{ ['k'.repeat(1021)]: 'value' }],
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    keyLengths
+  )) {
+    it(`rejects ${name} whose ":" is 1,025 characters after its start`, () =>
+      strict.throws(() => parse(rejected), { code: 'EXPECTED_MAPPING_ENTRY' }));
+
+    it(`accepts ${name} whose ":" is 1,024 characters after its start`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+
+  it('accepts an explicit key of any length', () =>
+    assertParsesTo(`? ${tooLongKey}\n: value\n`, { [tooLongKey]: 'value' }));
 });

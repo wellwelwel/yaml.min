@@ -353,10 +353,54 @@ describe('A tab is never indentation', () => {
     'sibling mapping entry': 'parent:\n  child: 1\n\tsibling: 2\n',
     'mapping entry with spaces after the tab': 'a:\n  b:\n\t  c: 1\n',
     'sequence item': '- a\n\t- b\n',
+    'sequence item on the line of a dash': '-\t-\n',
+    'sequence item on the line of a dash and a space': '- \t- a\n',
+    'mapping entry on the line of a dash': '-\tkey: value\n',
+    'sequence item on the line of an explicit key': '?\t- a\n',
+    'sequence item on the line of an explicit value': '? a\n:\t- b\n',
   };
 
   for (const [name, input] of Object.entries(tabIndented)) {
     it(`rejects a tab-indented ${name}`, () =>
       strict.throws(() => parse(input), SyntaxError));
+  }
+});
+
+describe('A tab separates a block indicator from a scalar', () => {
+  const tabSeparated = {
+    'a sequence item': { input: '-\t-1\n', expected: [-1] },
+    'nested sequence items': {
+      input: 'a:\n  -\tb\n  -\t\tc\n',
+      expected: { a: ['b', 'c'] },
+    },
+    'an explicit key and its value': {
+      input: '?\ta\n:\tb\n',
+      expected: { a: 'b' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(tabSeparated)) {
+    it(`reads ${name} after a tab`, () => assertParsesTo(input, expected));
+  }
+});
+
+describe('An explicit value may start a collection on its line', () => {
+  const compactValues = {
+    'a sequence': {
+      input: '? a\n: - b\n  - c\n',
+      expected: { a: ['b', 'c'] },
+    },
+    'a mapping': {
+      input: '? a\n: b: 1\n  c: 2\n',
+      expected: { a: { b: 1, c: 2 } },
+    },
+    'nested sequences after tabs': {
+      input: '? a\n: -\tb\n  -  -\tc\n     - d\n',
+      expected: { a: ['b', ['c', 'd']] },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(compactValues)) {
+    it(`reads ${name}`, () => assertParsesTo(input, expected));
   }
 });

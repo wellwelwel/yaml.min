@@ -1,13 +1,13 @@
 import type { YamlError } from '../error.js';
 import type { AnchorDeclaration, NodeTag, ParserState } from '../types.js';
-import { CHAR_COLON, isBlank, isFlowEntryEnd } from './chars.js';
+import { isBlank, isFlowIndicator } from './chars.js';
 import { quote, yamlError } from './errors.js';
 
 const MIN_ALIAS_EXPANSION_LIMIT = 1_000_000;
 const ALIAS_EXPANSION_PER_INPUT_CHARACTER = 10;
 
 const isAnchorNameEnd = (code: number): boolean =>
-  isBlank(code) || isFlowEntryEnd(code) || code === CHAR_COLON;
+  isBlank(code) || isFlowIndicator(code);
 
 export const readAnchorName = (state: ParserState): string => {
   const start = state.pos;
@@ -25,13 +25,17 @@ export const declareAnchor = (
   state: ParserState,
   name: string
 ): AnchorDeclaration => {
-  state.anchors.nodes.set(name, null);
-
-  return {
+  const anchor: AnchorDeclaration = {
     name,
+    depth: state.depth,
     contentStart: state.pos,
     expansionAtStart: state.anchors.expansion,
   };
+
+  state.anchors.nodes.set(name, null);
+  state.anchors.pending = anchor;
+
+  return anchor;
 };
 
 const collectionHeight = (value: unknown): number => {
@@ -86,6 +90,16 @@ const aliasTagError = (state: ParserState, tag: NodeTag): YamlError =>
     tag.start
   );
 
+const aliasAnchorError = (
+  state: ParserState,
+  anchor: AnchorDeclaration
+): YamlError =>
+  yamlError(
+    state,
+    'INVALID_ALIAS',
+    `The anchor ${quote(`&${anchor.name}`)} labels an alias: expected an alias without an anchor`
+  );
+
 const missingAnchorError = (
   state: ParserState,
   name: string,
@@ -115,6 +129,10 @@ export const parseAlias = (
   tag: NodeTag | undefined
 ): unknown => {
   if (tag !== undefined) throw aliasTagError(state, tag);
+
+  const { pending } = state.anchors;
+
+  if (pending?.depth === state.depth) throw aliasAnchorError(state, pending);
 
   const aliasStart = state.pos;
 
@@ -155,6 +173,7 @@ export const withAnchor = (
 ): unknown => {
   if (anchor === undefined) return value;
 
+  state.anchors.pending = undefined;
   state.anchors.nodes.set(anchor.name, {
     value,
     size:

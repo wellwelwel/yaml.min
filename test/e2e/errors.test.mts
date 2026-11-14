@@ -170,7 +170,8 @@ describe('Error messages are short and safe to display', () => {
   }
 
   it('clips a 200,000-character key to 40 characters and marks the cut', () => {
-    const message = messageOf(duplicated('k'.repeat(200_000)));
+    const key = 'k'.repeat(200_000);
+    const message = messageOf(`? ${key}\n? ${key}\n`);
 
     strict.ok(message.includes(`"${'k'.repeat(40)}…"`), message);
     strict.ok(!message.includes('k'.repeat(41)), message);

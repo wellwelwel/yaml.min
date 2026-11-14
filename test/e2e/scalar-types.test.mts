@@ -91,8 +91,11 @@ describe('Integers', () => {
   it('bare + returns string', () =>
     assertParsesTo(read('scalar-types--int-bare-plus.yaml'), '+'));
 
-  it('bare - in flow returns string', () =>
-    assertParsesTo(read('scalar-types--int-bare-minus-flow.yaml'), { a: '-' }));
+  it('rejects a bare - as a flow mapping value', () =>
+    strict.throws(
+      () => parse(read('scalar-types--int-bare-minus-flow.yaml')),
+      SyntaxError
+    ));
 });
 
 describe('Signed hexadecimal and octal numerals', () => {

@@ -68,12 +68,6 @@ describe('parse never returns part of a multi-document stream', () => {
     'a separator after a folded block scalar': '--- >\n  a\n  b\n---\nc',
     'a directive before each document':
       '%YAML 1.2\n---\na: 1\n...\n%YAML 1.2\n---\nb: 2\n',
-    'content after a leading end marker': read(
-      'documents--doc-end-then-content.yaml'
-    ),
-    'a separator after a leading end marker': read(
-      'documents--doc-end-doc-start.yaml'
-    ),
   };
 
   for (const [name, input] of Object.entries(multiDocumentStreams)) {
@@ -123,10 +117,6 @@ describe('parseAll returns every document in order', () => {
       input: '%YAML 1.2\n---\na: 1\n...\n%YAML 1.2\n---\nb: 2\n',
       expected: [{ a: 1 }, { b: 2 }],
     },
-    'a leading end marker as an empty document': {
-      input: '...\nhello',
-      expected: [null, 'hello'],
-    },
     'a single document': {
       input: 'a: 1',
       expected: [{ a: 1 }],
@@ -139,6 +129,109 @@ describe('parseAll returns every document in order', () => {
 
   for (const [name, { input, expected }] of Object.entries(streams)) {
     it(`returns ${name}`, () => strict.deepEqual(parseAll(input), expected));
+  }
+});
+
+describe('An end marker closes a document and never starts one', () => {
+  const streams = {
+    'a lone end marker': { input: '...\n', expected: [] },
+    'a comment and an end marker': { input: '# comment\n...\n', expected: [] },
+    'content after a leading end marker': {
+      input: read('documents--doc-end-then-content.yaml'),
+      expected: ['hello'],
+    },
+    'a separator after a leading end marker': {
+      input: read('documents--doc-end-doc-start.yaml'),
+      expected: [{ a: 1 }],
+    },
+    'a comment between two end markers': {
+      input:
+        'Bare\ndocument\n...\n# No document\n...\n|\n%!PS-Adobe-2.0 # Not the first line\n',
+      expected: ['Bare document', '%!PS-Adobe-2.0 # Not the first line\n'],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(streams)) {
+    it(`adds no document for the end markers in ${name}`, () =>
+      strict.deepEqual(parseAll(input), expected));
+  }
+
+  it('parse reads the single document after a leading end marker', () =>
+    assertParsesTo(read('documents--doc-end-then-content.yaml'), 'hello'));
+});
+
+describe('A block collection never starts on the "---" line', () => {
+  const markerLineCollections = {
+    'a block mapping': '--- a: b\n',
+    'an anchored block mapping': '--- &anchor a: b\n',
+    'a block mapping with a quoted key': '--- "a": b\n',
+    'a block sequence': '--- - a\n',
+    'an explicit key': '--- ? a\n',
+  };
+
+  for (const [name, input] of Object.entries(markerLineCollections)) {
+    it(`rejects ${name} on the marker line`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
+
+  const markerLineNodes = {
+    'a plain scalar': { input: '--- text\n', expected: 'text' },
+    'a flow sequence': { input: '--- [a, b]\n', expected: ['a', 'b'] },
+    'a flow mapping': { input: '--- {a: b}\n', expected: { a: 'b' } },
+    'a block scalar': { input: '--- |\n  text\n', expected: 'text\n' },
+    'a tag for the mapping below it': {
+      input: '--- !!map\na: b\n',
+      expected: { a: 'b' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(markerLineNodes)) {
+    it(`reads ${name} on the marker line`, () =>
+      strict.deepEqual(parse(input), expected));
+  }
+});
+
+describe('Directives sit at the start of a line before a "---"', () => {
+  const misplacedDirectives = {
+    'a directive followed directly by content': '%YAML 1.2\nfoo: 1\n',
+    'a directive with no document after it': '%YAML 1.2\n',
+    'a directive followed by an end marker': '%YAML 1.2\n...\n',
+    'an indented directive before content':
+      '  %TAG !e! tag:x,2000:\nfoo: bar\n',
+  };
+
+  for (const [name, input] of Object.entries(misplacedDirectives)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
+});
+
+describe('A %YAML directive names one YAML 1 version', () => {
+  const malformedDirectives = {
+    'an extra word after the version': '%YAML 1.2 foo\n---\n',
+    'a comment touching the version': '%YAML 1.1#...\n---\n',
+    'a second %YAML directive for the same document':
+      '%YAML 1.2\n%YAML 1.2\n---\n',
+    'a version other than 1': '%YAML 2.0\n---\n',
+    'no version': '%YAML\n---\n',
+  };
+
+  for (const [name, input] of Object.entries(malformedDirectives)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
+
+  const acceptedDirectives = {
+    'two spaces before the version': '%YAML  1.1\n---\na: 1\n',
+    'a tab before the version': '%YAML \t1.1\n---\na: 1\n',
+    'a comment after whitespace': '%YAML 1.1  # comment\n---\na: 1\n',
+    'a reserved directive with a shorter name': '%YAM 1.1\n---\na: 1\n',
+    'a reserved directive with a longer name': '%YAMLL 1.1\n---\na: 1\n',
+  };
+
+  for (const [name, input] of Object.entries(acceptedDirectives)) {
+    it(`reads the document after ${name}`, () =>
+      strict.deepEqual(parse(input), { a: 1 }));
   }
 });
 

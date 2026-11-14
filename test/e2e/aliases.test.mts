@@ -125,6 +125,91 @@ describe('A node carries at most one anchor', () => {
     strict.throws(() => parse('a: &a &b 1\nc: *a\n'), SyntaxError));
 });
 
+describe('An anchor or alias name runs until whitespace or a flow indicator', () => {
+  const namesWithColons = {
+    'an anchor with a colon in its name': {
+      input: 'key: &an:chor value\n',
+      expected: { key: 'value' },
+    },
+    'an anchor and an alias whose names end in a colon': {
+      input: '&a: key: &a value\nfoo:\n  *a:\n',
+      expected: { key: 'value', foo: 'key' },
+    },
+    'an anchor and an alias named with indicator characters': {
+      input: 'a: &:@*!$"<foo>: scalar a\nb: *:@*!$"<foo>:\n',
+      expected: { a: 'scalar a', b: 'scalar a' },
+    },
+  };
+  const aliasKeys = {
+    'a block mapping': {
+      input: 'a: &k key\n*k : other\n',
+      expected: { a: 'key', key: 'other' },
+    },
+    'a flow mapping': {
+      input: '{a: &k key, *k : other}',
+      expected: { a: 'key', key: 'other' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(namesWithColons)) {
+    it(`keeps the colon in ${name}`, () => assertParsesTo(input, expected));
+  }
+
+  it('reads a colon right after an alias as part of its name', () =>
+    strict.throws(() => parse('a: &a 1\n*a: b\n'), {
+      code: 'UNKNOWN_ANCHOR',
+    }));
+
+  for (const [name, { input, expected }] of Object.entries(aliasKeys)) {
+    it(`reads an alias spaced from its colon as a key in ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
+describe('An alias carries no anchor', () => {
+  const anchoredAliases = {
+    'as a block mapping value': 'key1: &a value\nkey2: &b *a\n',
+    'as a block mapping key': 'key1: &alias value1\n&b *alias : value2\n',
+    'on the line before a block mapping value': 'a: &x 1\nb: &y\n  *x\n',
+    'as a block sequence item': '- &x 1\n- &y *x\n',
+    'on the line before a block sequence item': '- &x 1\n- &y\n  *x\n',
+    'as an explicit key': 'a: &x 1\n? &y *x\n: v\n',
+    'as a flow sequence item': '[&x 1, &y *x]',
+    'on the line before a flow sequence item': '[&x 1, &y\n *x]',
+    'as a flow mapping key': '{&x 1: a, &y *x : b}',
+    'as a flow mapping value': '{a: &x 1, b: &y *x}',
+  };
+  const anchorsNextToAliases = {
+    'a block mapping key whose value is an alias': {
+      input: 'a: &x 1\n&k b: *x\nc: *k\n',
+      expected: { a: 1, b: 1, c: 'b' },
+    },
+    'a block sequence that holds an alias': {
+      input: 'a: &x 1\nb: &y\n  - *x\nc: *y\n',
+      expected: { a: 1, b: [1], c: [1] },
+    },
+    'a flow sequence that holds an alias': {
+      input: '- &x 1\n- &y [*x]\n- *y\n',
+      expected: [1, [1], [1]],
+    },
+    'a flow mapping key whose value is an alias': {
+      input: '{a: &x 1, &k b: *x, c: *k}',
+      expected: { a: 1, b: 1, c: 'b' },
+    },
+  };
+
+  for (const [name, input] of Object.entries(anchoredAliases)) {
+    it(`rejects an anchored alias ${name}`, () =>
+      strict.throws(() => parse(input), { code: 'INVALID_ALIAS' }));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(
+    anchorsNextToAliases
+  )) {
+    it(`keeps the anchor on ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
 describe('An alias returns the anchored value itself, not a copy', () => {
   const sharedValues = {
     'a sequence between block mapping values':

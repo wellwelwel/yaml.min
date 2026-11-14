@@ -11,6 +11,7 @@ import {
   isLineBreak,
   isSpaceOrTab,
 } from './chars.js';
+import { yamlError } from './errors.js';
 
 export const isBlankOrEnd = (state: ParserState, position: number): boolean =>
   position >= state.len || isBlank(state.src.charCodeAt(position));
@@ -72,7 +73,16 @@ export const skipToLineEnd = (state: ParserState): void => {
 };
 
 export const skipComment = (state: ParserState): void => {
-  if (state.src.charCodeAt(state.pos) === CHAR_HASH) skipToLineEnd(state);
+  if (state.src.charCodeAt(state.pos) !== CHAR_HASH) return;
+
+  if (state.pos > 0 && !isBlank(state.src.charCodeAt(state.pos - 1)))
+    throw yamlError(
+      state,
+      'UNEXPECTED_CHARACTER',
+      'A comment touches the content before it: expected a space or a tab before the "#"'
+    );
+
+  skipToLineEnd(state);
 };
 
 export const skipBlanksAndComments = (state: ParserState): void => {

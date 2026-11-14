@@ -13,7 +13,7 @@ import {
 } from '../__helpers__/index.mts';
 
 const require = createRequire(import.meta.url);
-const { parse } = require('../../src/index.ts');
+const { parse, parseAll } = require('../../src/index.ts');
 
 describe('Multiline plain scalars', () => {
   it('folds newlines', () =>
@@ -152,6 +152,71 @@ describe('Where a plain scalar ends', () => {
 
   it('question mark not followed by whitespace is plain scalar', () =>
     assertParsesTo(read('plain-scalars--question-no-whitespace.yaml'), '?abc'));
+});
+
+describe('A plain scalar never starts with an indicator', () => {
+  const indicatorStarts = {
+    'a reserved "@" as a mapping value': 'key: @foo\n',
+    'a reserved backtick as a mapping value': 'key: `foo`\n',
+    'a "%" as a mapping value': 'key: %x\n',
+    'a "]" as a mapping value': 'key: ]x\n',
+    'a "}" as a mapping value': 'key: }x\n',
+    'a "," as a mapping value': 'key: ,x\n',
+    'a "-" and a space as a mapping value': 'key: - a\n     - b\n',
+    'a "-" at the end of a mapping value': 'key: -\n',
+    'a "?" and a space as a mapping value': 'key: ? a\n',
+    'a reserved "@" as a mapping key': '@key: value\n',
+    'a reserved "@" as a sequence entry': '- @x\n',
+    'a reserved "@" as an explicit key': '? @x\n: value\n',
+    'a reserved "@" in a flow sequence': '[@x]\n',
+    'a reserved "@" as a flow mapping key': '{@x: value}\n',
+    'a "-" alone in a flow sequence': '[-]\n',
+    'a "-" before a comma in a nested flow sequence': '---\n- [-, -]\n',
+    'a "-" and a tab in a flow sequence': '[ -\ta ]\n',
+    'a "?" before a flow indicator': '{ ?}\n',
+    'a "%" line inside a document': '%YAML 1.2\n---\n%YAML 1.2\n---\n',
+  };
+
+  for (const [name, input] of Object.entries(indicatorStarts)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parseAll(input), SyntaxError));
+  }
+
+  const textAfterIndicators = {
+    'a "-" before a digit': { input: 'key: -1\n', expected: { key: -1 } },
+    'a "-" before a letter': { input: 'key: -x\n', expected: { key: '-x' } },
+    'a ":" before a letter': { input: 'key: :x\n', expected: { key: ':x' } },
+    'each indicator before a letter in a flow sequence': {
+      input: '[-a, ?b, :c]\n',
+      expected: ['-a', '?b', ':c'],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(
+    textAfterIndicators
+  )) {
+    it(`reads ${name} as text`, () => strict.deepEqual(parse(input), expected));
+  }
+});
+
+describe('A key can be empty before its ":"', () => {
+  const emptyKeys = {
+    'a block mapping': { input: ': value\n', expected: { '': 'value' } },
+    'a flow mapping': { input: '{ : value }\n', expected: { '': 'value' } },
+    'a flow mapping with the value on the next line': {
+      input: '{ :\n  value }\n',
+      expected: { '': 'value' },
+    },
+    'an explicit key holding only a comment': {
+      input: '? # note\n: value\n',
+      expected: { '': 'value' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(emptyKeys)) {
+    it(`reads the empty key of ${name}`, () =>
+      strict.deepEqual(parse(input), expected));
+  }
 });
 
 await describe('A multi-line plain scalar folds in time proportional to its length', async () => {
