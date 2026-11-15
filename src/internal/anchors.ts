@@ -21,6 +21,12 @@ export const readAnchorName = (state: ParserState): string => {
   return state.source.slice(start, state.position);
 };
 
+const anchoredNodes = (state: ParserState) => {
+  state.anchors.nodes ??= new Map();
+
+  return state.anchors.nodes;
+};
+
 export const declareAnchor = (
   state: ParserState,
   name: string
@@ -32,7 +38,7 @@ export const declareAnchor = (
     expansionAtStart: state.anchors.expansion,
   };
 
-  state.anchors.nodes.set(name, null);
+  anchoredNodes(state).set(name, null);
   state.anchors.pending = anchor;
 
   return anchor;
@@ -160,7 +166,7 @@ export const parseAlias = (
       aliasStart
     );
 
-  const node = state.anchors.nodes.get(name);
+  const node = state.anchors.nodes?.get(name);
 
   if (node === undefined) throw missingAnchorError(state, name, aliasStart);
   if (node === null) throw unfinishedAnchorError(state, name, aliasStart);
@@ -188,7 +194,7 @@ export const withAnchor = (
   if (anchor === undefined) return value;
 
   state.anchors.pending = undefined;
-  state.anchors.nodes.set(anchor.name, {
+  anchoredNodes(state).set(anchor.name, {
     value,
     size:
       state.position -

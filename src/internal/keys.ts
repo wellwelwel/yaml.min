@@ -92,7 +92,8 @@ const spansLines = (
 
 export const checkImplicitKey = (
   state: ParserState,
-  keyStart: number
+  keyStart: number,
+  canSpanLines: boolean
 ): void => {
   const colonOffset = state.position - keyStart;
 
@@ -104,7 +105,7 @@ export const checkImplicitKey = (
       keyStart
     );
 
-  if (spansLines(state, keyStart, state.position))
+  if (canSpanLines && spansLines(state, keyStart, state.position))
     throw yamlError(
       state,
       'EXPECTED_MAPPING_ENTRY',

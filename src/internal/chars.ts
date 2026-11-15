@@ -44,16 +44,39 @@ export const CHAR_TILDE = 0x7e;
 export const MAX_CODE_POINT = 0x10ffff;
 
 export const LONE_SURROGATE =
-  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+  /[\uD800-\uDFFF](?<![\uD800-\uDBFF](?=[\uDC00-\uDFFF]))(?<![\uD800-\uDBFF][\uDC00-\uDFFF])/;
 
-// Based on js-yaml
-export const NON_PRINTABLE = new RegExp(
-  `[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x84\\x86-\\x9F\\uFFFE\\uFFFF]|${LONE_SURROGATE.source}`
-);
+const NON_PRINTABLE =
+  /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x84\x86-\x9F\uFFFE\uFFFF\uD800-\uDFFF](?<![\uD800-\uDBFF](?=[\uDC00-\uDFFF]))(?<![\uD800-\uDBFF][\uDC00-\uDFFF])/;
 
-const INDICATOR_CODES: ReadonlySet<number> = new Set(
-  Array.from('-?:,[]{}#&*!|>\'"%@`', (indicator) => indicator.charCodeAt(0))
-);
+const C1_CONTROL_OR_WIDE = /[\x80-\x84\x86-\x9F\u0100-\uFFFF]/;
+
+// V8 only vectorizes the search for a class of at most 16 characters.
+const LOW_C0_CONTROL = /[\x00-\x08\x0B\x0C\x0E-\x12]/;
+const HIGH_C0_CONTROL_OR_DELETE = /[\x13-\x1F\x7F]/;
+
+const ASCII_LENGTH = 128;
+
+const asciiTable = (characters: string): Uint8Array => {
+  const table = new Uint8Array(ASCII_LENGTH);
+
+  for (const character of characters) table[character.charCodeAt(0)] = 1;
+
+  return table;
+};
+
+const INDICATORS = asciiTable('-?:,[]{}#&*!|>\'"%@`');
+
+export const PLAIN_LINE_END_CANDIDATES = asciiTable('\n\r#:,[]{}');
+export const SINGLE_QUOTED_BREAKS = asciiTable("'\n\r");
+export const DOUBLE_QUOTED_BREAKS = asciiTable('"\\\n\r');
+
+export const findNonPrintable = (source: string): number =>
+  C1_CONTROL_OR_WIDE.test(source) ||
+  LOW_C0_CONTROL.test(source) ||
+  HIGH_C0_CONTROL_OR_DELETE.test(source)
+    ? source.search(NON_PRINTABLE)
+    : -1;
 
 export const isSpaceOrTab = (code: number): boolean =>
   code === CHAR_SPACE || code === CHAR_TAB;
@@ -77,6 +100,9 @@ export const isFlowIndicator = (code: number): boolean =>
 export const isQuote = (code: number): boolean =>
   code === CHAR_SINGLE_QUOTE || code === CHAR_DOUBLE_QUOTE;
 
+export const isJsonLikeNodeStart = (code: number): boolean =>
+  isQuote(code) || code === CHAR_LEFT_BRACKET || code === CHAR_LEFT_BRACE;
+
 export const isContentIndicator = (code: number): boolean =>
   code === CHAR_SINGLE_QUOTE ||
   code === CHAR_DOUBLE_QUOTE ||
@@ -86,7 +112,11 @@ export const isContentIndicator = (code: number): boolean =>
   code === CHAR_GREATER_THAN ||
   code === CHAR_STAR;
 
-export const isIndicator = (code: number): boolean => INDICATOR_CODES.has(code);
+export const isListed = (table: Uint8Array, code: number): boolean =>
+  code < ASCII_LENGTH && table[code] === 1;
+
+export const isIndicator = (code: number): boolean =>
+  isListed(INDICATORS, code);
 
 export const hexadecimalDigitValue = (code: number): number => {
   if (code >= CHAR_0 && code <= CHAR_9) return code - CHAR_0;

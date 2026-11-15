@@ -1,4 +1,4 @@
-import type { ParserState } from '../types.js';
+import type { CharacterSearch, ParserState } from '../types.js';
 import {
   CHAR_BYTE_ORDER_MARK,
   CHAR_CARRIAGE_RETURN,
@@ -40,11 +40,20 @@ export const countIndentSpaces = (
   state: ParserState,
   lineStart: number
 ): number => {
+  if (lineStart === state.lastIndentStart) return state.lastIndentWidth;
+
   let cursor = lineStart;
 
-  while (state.source.charCodeAt(cursor) === CHAR_SPACE) cursor++;
+  while (
+    cursor < state.sourceLength &&
+    state.source.charCodeAt(cursor) === CHAR_SPACE
+  )
+    cursor++;
 
-  return cursor - lineStart;
+  state.lastIndentStart = lineStart;
+  state.lastIndentWidth = cursor - lineStart;
+
+  return state.lastIndentWidth;
 };
 
 export const isLineStart = (state: ParserState, position: number): boolean =>
@@ -83,20 +92,70 @@ export const isDocumentMarker = (
 ): boolean =>
   isDocumentStart(state, position) || isDocumentEnd(state, position);
 
+const mayStartDocumentBoundary = (code: number): boolean =>
+  code === CHAR_MINUS || code === CHAR_DOT || code === CHAR_BYTE_ORDER_MARK;
+
 export const isDocumentBoundary = (
   state: ParserState,
   position: number
 ): boolean =>
-  isDocumentMarker(state, position) ||
-  isByteOrderMarkAfterLineBreak(state, position);
+  mayStartDocumentBoundary(state.source.charCodeAt(position)) &&
+  (isDocumentMarker(state, position) ||
+    isByteOrderMarkAfterLineBreak(state, position));
+
+export const sliceBeforeTrailingSpaces = (
+  state: ParserState,
+  start: number,
+  end: number
+): string => {
+  let trimmedEnd = end;
+
+  while (
+    trimmedEnd > start &&
+    isSpaceOrTab(state.source.charCodeAt(trimmedEnd - 1))
+  )
+    trimmedEnd--;
+
+  return state.source.slice(start, trimmedEnd);
+};
+
+export const skipSpacesFrom = (state: ParserState, from: number): number => {
+  let cursor = from;
+
+  while (
+    cursor < state.sourceLength &&
+    isSpaceOrTab(state.source.charCodeAt(cursor))
+  )
+    cursor++;
+
+  return cursor;
+};
 
 export const skipSpaces = (state: ParserState): void => {
-  while (isSpaceOrTab(state.source.charCodeAt(state.position)))
-    state.position++;
+  state.position = skipSpacesFrom(state, state.position);
+};
+
+const findCharacter = (
+  state: ParserState,
+  search: CharacterSearch,
+  character: string,
+  position: number
+): number => {
+  if (position >= search.start && position <= search.found) return search.found;
+
+  const index = state.source.indexOf(character, position);
+
+  search.start = position;
+  search.found = index === -1 ? state.sourceLength : index;
+
+  return search.found;
 };
 
 export const skipToLineEnd = (state: ParserState): void => {
-  while (!isAtLineBreakOrEnd(state)) state.position++;
+  state.position = Math.min(
+    findCharacter(state, state.lineFeeds, '\n', state.position),
+    findCharacter(state, state.carriageReturns, '\r', state.position)
+  );
 };
 
 export const skipComment = (state: ParserState): void => {
@@ -132,9 +191,7 @@ export const skipBlanksAndComments = (state: ParserState): void => {
 };
 
 const skipTabbedBlankLine = (state: ParserState): boolean => {
-  let cursor = state.position;
-
-  while (isSpaceOrTab(state.source.charCodeAt(cursor))) cursor++;
+  const cursor = skipSpacesFrom(state, state.position);
 
   if (cursor < state.sourceLength) {
     const code = state.source.charCodeAt(cursor);

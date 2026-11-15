@@ -184,7 +184,7 @@ const shorthandTagName = (
     throw invalidTagError(state, source, start);
 
   const prefix =
-    state.tagHandles.get(handle) ?? DEFAULT_TAG_HANDLES.get(handle);
+    state.tagHandles?.get(handle) ?? DEFAULT_TAG_HANDLES.get(handle);
 
   if (prefix === undefined)
     throw yamlError(
@@ -361,7 +361,7 @@ export const readTagDirective = (state: ParserState): void => {
       directiveStart
     );
 
-  if (state.tagHandles.has(handle))
+  if (state.tagHandles?.has(handle))
     throw yamlError(
       state,
       'DUPLICATE_TAG_HANDLE',
@@ -369,5 +369,6 @@ export const readTagDirective = (state: ParserState): void => {
       directiveStart
     );
 
+  state.tagHandles ??= new Map();
   state.tagHandles.set(handle, prefix);
 };

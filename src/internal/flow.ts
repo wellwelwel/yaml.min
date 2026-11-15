@@ -18,6 +18,7 @@ import {
   CHAR_STAR,
   isBlank,
   isFlowEntryEnd,
+  isJsonLikeNodeStart,
   isLineBreak,
   isQuote,
   isSpaceOrTab,
@@ -31,6 +32,7 @@ import {
   isValueIndicator,
   skipComment,
   skipSpaces,
+  skipSpacesFrom,
 } from './navigation.js';
 import { parsePlainScalar, unindentedFlowLineError } from './plain-scalars.js';
 import { mergeNodeProperties, readNodeProperties } from './properties.js';
@@ -58,12 +60,12 @@ const FLOW_MAPPING: FlowCollection = {
   foreignCloseCode: CHAR_RIGHT_BRACKET,
 };
 
-const checkFlowLine = (state: ParserState, ownerIndent: number): void => {
+const enterFlowLine = (state: ParserState, ownerIndent: number): void => {
   const lineStart = state.position;
   const indent = countIndentSpaces(state, lineStart);
-  let cursor = lineStart + indent;
+  const cursor = skipSpacesFrom(state, lineStart + indent);
 
-  while (isSpaceOrTab(state.source.charCodeAt(cursor))) cursor++;
+  state.position = cursor;
 
   if (cursor >= state.sourceLength) return;
 
@@ -106,7 +108,7 @@ const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
     if (!isLineBreak(code)) return;
 
     state.position++;
-    checkFlowLine(state, ownerIndent);
+    enterFlowLine(state, ownerIndent);
   }
 };
 
@@ -215,9 +217,6 @@ const closeFlowEntry = (
   return code === CHAR_COMMA;
 };
 
-const isJsonLikeNodeStart = (code: number): boolean =>
-  isQuote(code) || code === CHAR_LEFT_BRACKET || code === CHAR_LEFT_BRACE;
-
 const isImplicitPairColon = (
   state: ParserState,
   isJsonLikeKey: boolean
@@ -232,7 +231,7 @@ const parseImplicitPair = (
   isQuotedStr: boolean,
   keyStart: number
 ): Record<string, unknown> => {
-  checkImplicitKey(state, keyStart);
+  checkImplicitKey(state, keyStart, true);
   enterCollection(state);
 
   const pair: Record<string, unknown> = {};
@@ -303,15 +302,8 @@ const readFlowSequenceItem = (
     : item;
 };
 
-const parseFlowValue = (state: ParserState, ownerIndent: number): unknown => {
-  skipFlowSeparation(state, ownerIndent);
-
-  return parseFlowNode(
-    state,
-    ownerIndent,
-    readFlowNodeProperties(state, ownerIndent)
-  );
-};
+const parseFlowValue = (state: ParserState, ownerIndent: number): unknown =>
+  parseFlowNode(state, ownerIndent, readFlowNodeProperties(state, ownerIndent));
 
 const isExplicitKeyIndicator = (state: ParserState): boolean =>
   state.source.charCodeAt(state.position) === CHAR_QUESTION &&

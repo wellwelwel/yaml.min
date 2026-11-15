@@ -13,8 +13,8 @@ import {
   CHAR_STAR,
   CHAR_TAB,
   isContentIndicator,
+  isJsonLikeNodeStart,
   isQuote,
-  isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
 import { quote, yamlError } from './errors.js';
@@ -34,6 +34,7 @@ import {
   skipComment,
   skipNewlinesAndComments,
   skipSpaces,
+  skipSpacesFrom,
 } from './navigation.js';
 import {
   findPlainLineEnd,
@@ -72,9 +73,7 @@ const skipIndicator = (state: ParserState): void => {
 };
 
 const isQuotedMapKey = (state: ParserState): boolean => {
-  let lookAhead = findQuotedScalarEnd(state);
-
-  while (isSpaceOrTab(state.source.charCodeAt(lookAhead))) lookAhead++;
+  const lookAhead = skipSpacesFrom(state, findQuotedScalarEnd(state));
 
   return (
     state.source.charCodeAt(lookAhead) === CHAR_COLON &&
@@ -296,6 +295,9 @@ const parseMapEntry = (
   const entryStart = state.position;
   const properties = readNodeProperties(state, false);
   const isQuotedStr = isQuotedStrKey(state, properties?.tag);
+  const keyCanSpanLines = isJsonLikeNodeStart(
+    state.source.charCodeAt(state.position)
+  );
   const key = withAnchor(
     state,
     properties?.anchor,
@@ -312,7 +314,7 @@ const parseMapEntry = (
       entryStart
     );
 
-  checkImplicitKey(state, entryStart);
+  checkImplicitKey(state, entryStart, keyCanSpanLines);
   skipIndicator(state);
   setMapKey(
     state,

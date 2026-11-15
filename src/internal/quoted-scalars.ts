@@ -7,11 +7,14 @@ import {
   CHAR_LOWER_X,
   CHAR_SINGLE_QUOTE,
   CHAR_UPPER_U,
+  DOUBLE_QUOTED_BREAKS,
   hexadecimalDigitValue,
   isLineBreak,
+  isListed,
   isSpaceOrTab,
   LONE_SURROGATE,
   MAX_CODE_POINT,
+  SINGLE_QUOTED_BREAKS,
 } from './chars.js';
 import { characterAt, quote, yamlError } from './errors.js';
 import {
@@ -20,6 +23,7 @@ import {
   isDocumentMarker,
   lineBreakWidth,
   skipSpaces,
+  sliceBeforeTrailingSpaces,
 } from './navigation.js';
 
 const SIMPLE_ESCAPES: Readonly<Record<string, string>> = {
@@ -107,20 +111,9 @@ const foldQuotedLine = (
   state: ParserState,
   captureStart: number,
   ownerIndent: number
-): string => {
-  let captureEnd = state.position;
-
-  while (
-    captureEnd > captureStart &&
-    isSpaceOrTab(state.source.charCodeAt(captureEnd - 1))
-  )
-    captureEnd--;
-
-  return (
-    state.source.slice(captureStart, captureEnd) +
-    foldQuotedLineBreaks(state, ownerIndent)
-  );
-};
+): string =>
+  sliceBeforeTrailingSpaces(state, captureStart, state.position) +
+  foldQuotedLineBreaks(state, ownerIndent);
 
 const truncatedEscapeError = (
   state: ParserState,
@@ -330,6 +323,21 @@ export const findQuotedScalarEnd = (state: ParserState): number =>
     ? findSingleQuotedEnd(state, state.position + 1)
     : findDoubleQuotedEnd(state, state.position + 1);
 
+// JavaScriptCore slows this loop down when the plain scalar scan shares it.
+const skipToQuotedBreak = (state: ParserState, breaks: Uint8Array): boolean => {
+  let cursor = state.position;
+
+  while (
+    cursor < state.sourceLength &&
+    !isListed(breaks, state.source.charCodeAt(cursor))
+  )
+    cursor++;
+
+  state.position = cursor;
+
+  return cursor < state.sourceLength;
+};
+
 const parseSingleQuoted = (state: ParserState, ownerIndent: number): string => {
   const openingQuote = state.position;
 
@@ -338,15 +346,8 @@ const parseSingleQuoted = (state: ParserState, ownerIndent: number): string => {
   let result = '';
   let captureStart = state.position;
 
-  while (state.position < state.sourceLength) {
-    const code = state.source.charCodeAt(state.position);
-
-    if (code !== CHAR_SINGLE_QUOTE && !isLineBreak(code)) {
-      state.position++;
-      continue;
-    }
-
-    if (code !== CHAR_SINGLE_QUOTE) {
+  while (skipToQuotedBreak(state, SINGLE_QUOTED_BREAKS)) {
+    if (state.source.charCodeAt(state.position) !== CHAR_SINGLE_QUOTE) {
       result += foldQuotedLine(state, captureStart, ownerIndent);
       captureStart = state.position;
       continue;
@@ -380,17 +381,8 @@ const parseDoubleQuoted = (state: ParserState, ownerIndent: number): string => {
   let result = '';
   let captureStart = state.position;
 
-  while (state.position < state.sourceLength) {
+  while (skipToQuotedBreak(state, DOUBLE_QUOTED_BREAKS)) {
     const code = state.source.charCodeAt(state.position);
-
-    if (
-      code !== CHAR_DOUBLE_QUOTE &&
-      code !== CHAR_BACKSLASH &&
-      !isLineBreak(code)
-    ) {
-      state.position++;
-      continue;
-    }
 
     if (isLineBreak(code)) {
       result += foldQuotedLine(state, captureStart, ownerIndent);

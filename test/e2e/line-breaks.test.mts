@@ -5,7 +5,11 @@
  */
 
 import { describe, it, strict } from 'poku';
-import { parse, parseAll } from '../__helpers__/index.mts';
+import {
+  parse,
+  parseAll,
+  parseWithinTimeLimit,
+} from '../__helpers__/index.mts';
 
 describe('Every construct reads CRLF and bare CR line breaks', () => {
   const lineBreakDocuments = {
@@ -107,6 +111,14 @@ describe('Every construct reads CRLF and bare CR line breaks', () => {
       input: 'data: |\r\n\r\n  line1',
       expected: { data: '\nline1\n' },
     },
+    'a literal block scalar with bare CR line ends': {
+      input: '|\r  hello\r  world\r',
+      expected: 'hello\nworld\n',
+    },
+    'a literal block scalar that mixes bare CR and LF line ends': {
+      input: 'text: |\r  one\n  two\rnext: 1\n',
+      expected: { text: 'one\ntwo\n', next: 1 },
+    },
   };
 
   for (const [name, { input, expected }] of Object.entries(
@@ -166,6 +178,10 @@ describe('A bare CR ends every comment and directive line', () => {
       input: 'a: 1 # note\rhidden: 2\nb: 3\n',
       expected: { a: 1, hidden: 2, b: 3 },
     },
+    'a trailing comment that follows a comment ended by LF': {
+      input: 'a: 1 # one\nb: 2 # two\rhidden: 3\n',
+      expected: { a: 1, b: 2, hidden: 3 },
+    },
   };
 
   for (const [name, { input, expected }] of Object.entries(
@@ -196,10 +212,29 @@ describe('A comment that ends with a bare CR hides no line from the checks', () 
       input: 'a: 1 # note\rb: [1, 2\r',
       code: 'UNTERMINATED_FLOW_COLLECTION',
     },
+    'a repeated key below a comment line ended by LF': {
+      input: '# header\nadmin: false # note\radmin: true\n',
+      code: 'DUPLICATE_KEY',
+    },
   };
 
   for (const [name, { input, code }] of Object.entries(invalidDocuments)) {
     it(`rejects ${name} after the comment`, () =>
       strict.throws(() => parse(input), { code }));
+  }
+});
+
+await describe('Lines that end with a bare CR are read in time proportional to their number', async () => {
+  const bareCarriageReturnDocuments = {
+    'comment lines': `${'# comment\r'.repeat(200_000)}a: 1\r`,
+    'block scalar lines': `text: |\r${'  line\r'.repeat(200_000)}`,
+  };
+
+  for (const [name, input] of Object.entries(bareCarriageReturnDocuments)) {
+    await it(`reads 200,000 ${name} within the time limit`, async () => {
+      const outcome = await parseWithinTimeLimit(input);
+
+      strict.equal(outcome, 'returned');
+    });
   }
 });

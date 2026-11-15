@@ -1,6 +1,10 @@
 import type { ParseOptions, ParserState } from '../types.js';
 import { parseMapValue, parseValue } from './block.js';
-import { CHAR_BYTE_ORDER_MARK, CHAR_PERCENT, NON_PRINTABLE } from './chars.js';
+import {
+  CHAR_BYTE_ORDER_MARK,
+  CHAR_PERCENT,
+  findNonPrintable,
+} from './chars.js';
 import { readMaxDepth } from './depth.js';
 import { codePointLabel, quote, yamlError } from './errors.js';
 import {
@@ -26,11 +30,9 @@ const YAML_DIRECTIVE = '%YAML';
 const YAML_VERSION = /^[0-9]+\.[0-9]+$/;
 
 const rejectNonPrintable = (state: ParserState): void => {
-  const match = NON_PRINTABLE.exec(state.source);
+  const position = findNonPrintable(state.source);
 
-  if (match === null) return;
-
-  const position = match.index + match[0].length - 1;
+  if (position === -1) return;
 
   throw yamlError(
     state,
@@ -55,13 +57,19 @@ export const createParserState = (
   const state: ParserState = {
     source,
     sourceLength: source.length,
+    lineFeeds: { start: 0, found: -1 },
+    carriageReturns: { start: 0, found: -1 },
     position: 0,
+    lastPlainLineStart: -1,
+    lastPlainLineEnd: -1,
+    lastIndentStart: -1,
+    lastIndentWidth: 0,
     depth: 0,
     maxDepth,
     bigint: options?.bigint === true,
     allowUnsafeKeys: options?.allowUnsafeKeys === true,
-    anchors: { nodes: new Map(), expansion: 0, pending: undefined },
-    tagHandles: new Map(),
+    anchors: { nodes: undefined, expansion: 0, pending: undefined },
+    tagHandles: undefined,
   };
 
   rejectNonPrintable(state);
@@ -213,7 +221,9 @@ const skipToDocumentStartAfterByteOrderMark = (state: ParserState): void => {
 };
 
 export const skipToDocument = (state: ParserState): boolean => {
-  state.tagHandles.clear();
+  state.tagHandles = undefined;
+
+  if (state.position >= state.sourceLength) return false;
 
   if (isByteOrderMarkAfterLineBreak(state, state.position)) {
     skipToDocumentStartAfterByteOrderMark(state);
@@ -248,7 +258,7 @@ const readBareDocumentRoot = (state: ParserState): unknown => {
 };
 
 export const readDocument = (state: ParserState): unknown => {
-  state.anchors.nodes.clear();
+  state.anchors.nodes = undefined;
 
   const value = isDocumentStart(state, state.position)
     ? readMarkedDocumentRoot(state)

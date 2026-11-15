@@ -43,6 +43,11 @@ export type SourceLocation = {
   column: number;
 };
 
+export type CharacterSearch = {
+  start: number;
+  found: number;
+};
+
 type AnchoredNode = {
   value: unknown;
   size: number;
@@ -52,17 +57,23 @@ type AnchoredNode = {
 export type ParserState = {
   source: string;
   sourceLength: number;
+  lineFeeds: CharacterSearch;
+  carriageReturns: CharacterSearch;
   position: number;
+  lastPlainLineStart: number;
+  lastPlainLineEnd: number;
+  lastIndentStart: number;
+  lastIndentWidth: number;
   depth: number;
   maxDepth: number;
   bigint: boolean;
   allowUnsafeKeys: boolean;
   anchors: {
-    nodes: Map<string, AnchoredNode | null>;
+    nodes: Map<string, AnchoredNode | null> | undefined;
     expansion: number;
     pending: AnchorDeclaration | undefined;
   };
-  tagHandles: Map<string, string>;
+  tagHandles: Map<string, string> | undefined;
 };
 
 export type AnchorDeclaration = {

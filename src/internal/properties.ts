@@ -28,7 +28,7 @@ const secondTagError = (
     position
   );
 
-export const readNodeProperties = (
+const readDeclaredNodeProperties = (
   state: ParserState,
   inFlow: boolean
 ): NodeProperties | undefined => {
@@ -62,6 +62,25 @@ export const readNodeProperties = (
     anchor: anchorName ? declareAnchor(state, anchorName) : undefined,
     tag,
   };
+};
+
+const startsNodeProperty = (state: ParserState): boolean => {
+  if (state.position >= state.sourceLength) return false;
+
+  const code = state.source.charCodeAt(state.position);
+
+  return code === CHAR_EXCLAMATION || code === CHAR_AMPERSAND;
+};
+
+export const readNodeProperties = (
+  state: ParserState,
+  inFlow: boolean
+): NodeProperties | undefined => {
+  skipSpaces(state);
+
+  return startsNodeProperty(state)
+    ? readDeclaredNodeProperties(state, inFlow)
+    : undefined;
 };
 
 export const mergeNodeProperties = (

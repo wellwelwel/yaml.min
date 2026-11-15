@@ -17,72 +17,67 @@ import {
 } from './chars.js';
 
 const RADIX_PREFIX_LENGTH = 2;
+const NOT_DIGITS = -1;
 
 export const MAX_BIG_INTEGER_DIGITS = 1000;
 
 const FLOAT_NUMERAL = /^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/;
 const INFINITY_NUMERAL = /^[+-]?\.(inf|Inf|INF)$/;
 
-const isDigitRun = (raw: string, start: number, radix: number): boolean => {
-  if (start >= raw.length) return false;
+const digitsValue = (raw: string, start: number, radix: number): number => {
+  if (start >= raw.length) return NOT_DIGITS;
+
+  let value = 0;
 
   for (let index = start; index < raw.length; index++) {
     const digit = hexadecimalDigitValue(raw.charCodeAt(index));
 
-    if (digit === -1 || digit >= radix) return false;
+    if (digit === -1 || digit >= radix) return NOT_DIGITS;
+
+    value = value * radix + digit;
   }
 
-  return true;
+  return value;
 };
 
 const signLengthOf = (raw: string): number =>
   raw.charCodeAt(0) === CHAR_MINUS || raw.charCodeAt(0) === CHAR_PLUS ? 1 : 0;
 
-const prefixedRadix = (raw: string): number => {
-  const radix = raw.charCodeAt(1) === CHAR_LOWER_O ? 8 : 16;
-
-  return isDigitRun(raw, RADIX_PREFIX_LENGTH, radix) ? radix : 0;
-};
-
-const hasRadixPrefix = (raw: string, signLength: number): boolean => {
-  if (raw.charCodeAt(signLength) !== CHAR_0) return false;
-
-  const prefix = raw.charCodeAt(signLength + 1);
-
-  return prefix === CHAR_LOWER_O || prefix === CHAR_LOWER_X;
-};
-
 const integerRadix = (raw: string): number => {
-  const signLength = signLengthOf(raw);
+  if (raw.length <= RADIX_PREFIX_LENGTH || raw.charCodeAt(0) !== CHAR_0)
+    return 10;
 
-  if (hasRadixPrefix(raw, signLength))
-    return signLength === 0 ? prefixedRadix(raw) : 0;
+  const prefix = raw.charCodeAt(1);
 
-  return isDigitRun(raw, signLength, 10) ? 10 : 0;
+  if (prefix === CHAR_LOWER_O) return 8;
+
+  return prefix === CHAR_LOWER_X ? 16 : 10;
 };
 
-const toSafeInteger = (raw: string, radix: number): number | undefined => {
-  const integer =
-    radix === 10
-      ? Number.parseInt(raw, 10)
-      : Number.parseInt(raw.slice(RADIX_PREFIX_LENGTH), radix);
+const digitsStartOf = (raw: string, radix: number): number =>
+  radix === 10 ? signLengthOf(raw) : RADIX_PREFIX_LENGTH;
+
+const integerMagnitude = (raw: string, radix: number): number =>
+  digitsValue(raw, digitsStartOf(raw, radix), radix);
+
+const toSafeInteger = (raw: string, magnitude: number): number | undefined => {
+  const integer = raw.charCodeAt(0) === CHAR_MINUS ? -magnitude : magnitude;
 
   return Number.isSafeInteger(integer) ? integer : undefined;
 };
 
-const toBigInteger = (raw: string, radix: number): bigint | undefined => {
-  const digitCount =
-    raw.length - (radix === 10 ? signLengthOf(raw) : RADIX_PREFIX_LENGTH);
-
-  return digitCount > MAX_BIG_INTEGER_DIGITS ? undefined : BigInt(raw);
-};
+const toBigInteger = (raw: string, radix: number): bigint | undefined =>
+  raw.length - digitsStartOf(raw, radix) > MAX_BIG_INTEGER_DIGITS
+    ? undefined
+    : BigInt(raw);
 
 const convertInteger = (
   raw: string,
   radix: number,
+  magnitude: number,
   bigint: boolean
 ): number | bigint | undefined =>
-  bigint ? toBigInteger(raw, radix) : toSafeInteger(raw, radix);
+  bigint ? toBigInteger(raw, radix) : toSafeInteger(raw, magnitude);
 
 const isNumeralStart = (code: number): boolean =>
   (code >= CHAR_0 && code <= CHAR_9) ||
@@ -105,8 +100,11 @@ export const resolveInteger = (
   bigint: boolean
 ): number | bigint | undefined => {
   const radix = integerRadix(raw);
+  const magnitude = integerMagnitude(raw, radix);
 
-  return radix === 0 ? undefined : convertInteger(raw, radix, bigint);
+  return magnitude === NOT_DIGITS
+    ? undefined
+    : convertInteger(raw, radix, magnitude, bigint);
 };
 
 export const resolveFloat = (raw: string): number | undefined => {
@@ -131,8 +129,11 @@ const resolveNumeral = (
   bigint: boolean
 ): number | bigint | undefined => {
   const radix = integerRadix(raw);
+  const magnitude = integerMagnitude(raw, radix);
 
-  return radix === 0 ? resolveFloat(raw) : convertInteger(raw, radix, bigint);
+  return magnitude === NOT_DIGITS
+    ? resolveFloat(raw)
+    : convertInteger(raw, radix, magnitude, bigint);
 };
 
 export const resolveScalar = (raw: string, bigint: boolean): unknown => {
