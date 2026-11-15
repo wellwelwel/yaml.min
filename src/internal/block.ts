@@ -2,16 +2,13 @@ import type { NodeProperties, NodeTag, ParserState } from '../types.js';
 import { parseAlias, withAnchor } from './anchors.js';
 import { parseBlockScalar } from './block-scalars.js';
 import {
-  CHAR_BACKSLASH,
   CHAR_COLON,
-  CHAR_DOUBLE_QUOTE,
   CHAR_GREATER_THAN,
   CHAR_LEFT_BRACE,
   CHAR_LEFT_BRACKET,
   CHAR_MINUS,
   CHAR_PIPE,
   CHAR_QUESTION,
-  CHAR_SINGLE_QUOTE,
   CHAR_SPACE,
   CHAR_STAR,
   CHAR_TAB,
@@ -44,7 +41,7 @@ import {
   parsePlainScalar,
 } from './plain-scalars.js';
 import { mergeNodeProperties, readNodeProperties } from './properties.js';
-import { parseDoubleQuoted, parseSingleQuoted } from './quoted-scalars.js';
+import { findQuotedScalarEnd, parseQuotedScalar } from './quoted-scalars.js';
 import {
   checkCollectionTag,
   resolveEmptyNode,
@@ -74,33 +71,15 @@ const skipIndicator = (state: ParserState): void => {
   if (state.source.charCodeAt(state.position) === CHAR_SPACE) state.position++;
 };
 
-const isQuotedMapKey = (state: ParserState, quoteCharCode: number): boolean => {
-  let lookAhead = state.position + 1;
-
-  while (
-    lookAhead < state.sourceLength &&
-    state.source.charCodeAt(lookAhead) !== quoteCharCode
-  ) {
-    if (
-      quoteCharCode === CHAR_DOUBLE_QUOTE &&
-      state.source.charCodeAt(lookAhead) === CHAR_BACKSLASH
-    )
-      lookAhead++;
-
-    lookAhead++;
-  }
-
-  if (lookAhead < state.sourceLength) lookAhead++;
+const isQuotedMapKey = (state: ParserState): boolean => {
+  let lookAhead = findQuotedScalarEnd(state);
 
   while (isSpaceOrTab(state.source.charCodeAt(lookAhead))) lookAhead++;
 
-  if (
-    lookAhead >= state.sourceLength ||
-    state.source.charCodeAt(lookAhead) !== CHAR_COLON
-  )
-    return false;
-
-  return isBlankOrEnd(state, lookAhead + 1);
+  return (
+    state.source.charCodeAt(lookAhead) === CHAR_COLON &&
+    isBlankOrEnd(state, lookAhead + 1)
+  );
 };
 
 const hasMappingIndicatorInLine = (state: ParserState): boolean =>
@@ -110,7 +89,7 @@ const hasMappingIndicatorInLine = (state: ParserState): boolean =>
 const opensImplicitKey = (state: ParserState): boolean => {
   const code = state.source.charCodeAt(state.position);
 
-  if (isQuote(code)) return isQuotedMapKey(state, code);
+  if (isQuote(code)) return isQuotedMapKey(state);
 
   return !isContentIndicator(code) && hasMappingIndicatorInLine(state);
 };
@@ -260,10 +239,8 @@ const parseScalarOrFlowNode = (
 ): unknown => {
   const code = state.source.charCodeAt(state.position);
 
-  if (code === CHAR_SINGLE_QUOTE)
-    return resolveTextScalar(state, tag, parseSingleQuoted(state, ownerIndent));
-  if (code === CHAR_DOUBLE_QUOTE)
-    return resolveTextScalar(state, tag, parseDoubleQuoted(state, ownerIndent));
+  if (isQuote(code))
+    return resolveTextScalar(state, tag, parseQuotedScalar(state, ownerIndent));
   if (code === CHAR_LEFT_BRACKET)
     return parseFlowSequence(state, ownerIndent, tag);
   if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
@@ -299,10 +276,8 @@ const parseMapKey = (
 ): unknown => {
   const keyCode = state.source.charCodeAt(state.position);
 
-  if (keyCode === CHAR_SINGLE_QUOTE)
-    return resolveTextScalar(state, tag, parseSingleQuoted(state, indent));
-  if (keyCode === CHAR_DOUBLE_QUOTE)
-    return resolveTextScalar(state, tag, parseDoubleQuoted(state, indent));
+  if (isQuote(keyCode))
+    return resolveTextScalar(state, tag, parseQuotedScalar(state, indent));
   if (keyCode === CHAR_LEFT_BRACKET)
     return parseFlowSequence(state, indent, tag);
   if (keyCode === CHAR_LEFT_BRACE) return parseFlowMap(state, indent, tag);
@@ -394,7 +369,6 @@ const parseExplicitMapEntry = (
     );
 
   setMapKey(state, result, key, isQuotedStr, keyStart, null);
-
   state.position -= nextIndent;
 };
 

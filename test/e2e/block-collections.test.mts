@@ -78,6 +78,38 @@ describe('A quoted scalar can be a block mapping key', () => {
   }
 });
 
+describe('A single-quoted block mapping key can hold an escaped quote', () => {
+  const escapedQuoteKeys = {
+    'at the top level': {
+      input: "'it''s': value\n",
+      expected: { "it's": 'value' },
+    },
+    'in a nested mapping': {
+      input: "outer:\n  'it''s': value\n",
+      expected: { outer: { "it's": 'value' } },
+    },
+    'in a sequence entry': {
+      input: "- 'it''s': value\n",
+      expected: [{ "it's": 'value' }],
+    },
+    'made only of an escaped quote': {
+      input: "'''': value\n",
+      expected: { "'": 'value' },
+    },
+    'with escaped quotes in a row': {
+      input: "'a''b''''c': value\n",
+      expected: { "a'b''c": 'value' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(escapedQuoteKeys)) {
+    it(`reads the key ${name}`, () => assertParsesTo(input, expected));
+  }
+
+  it('keeps a colon that follows an escaped quote inside the scalar', () =>
+    assertParsesTo("- 'a'': b'\n", ["a': b"]));
+});
+
 describe('An explicit key writes "?" before the key and ":" before its value', () => {
   const explicitKeys = {
     'keys with values': {

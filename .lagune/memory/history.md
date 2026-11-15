@@ -288,3 +288,17 @@
 - **Category:** Acceptance of syntactically invalid input, creating a parser differential (CWE-1286: Improper Validation of Syntactic Correctness of Input, CWE-436: Interpretation Conflict)
 - **What it is:** After a `- ` or `: ` indicator, an anchor followed by a sequence that starts on the same line, such as `- &a - b`, is accepted, and the anchor labels the inner sequence. YAML does not allow node properties before a sequence that starts on the same line, and **js-yaml** and **yaml** both reject it (**yaml** made this strict in 2.5.0, issue 557). A tag in the same place is already rejected, so only the anchor slips through.
 - **Closed:** 2026-11-14
+
+### Single-quoted block keys that contain an escaped quote are rejected
+
+- **Classification:** Low
+- **Category:** Parser differential through over-strict syntax validation (CWE-436: Interpretation Conflict, CWE-1286: Improper Validation of Syntactic Correctness of Input)
+- **What it is:** Inside single quotes, YAML writes a literal `'` as two quotes, so `'it''s': v` is a valid mapping whose key is `it's`. In indentation-style (block) mappings, the parser decides whether a line starts with a quoted key by looking ahead for the closing quote, and it stops at the first `'` it meets, which is the first half of the doubled pair. It then finds no `:` after that quote, reads the key as a plain value, and fails on the `: v` that follows. This happens at the top level, inside nested mappings, and in list entries. The same key works inside braces (`{'it''s': v}`) and after an explicit `?`.
+- **Closed:** 2026-11-15
+
+### Quoted and alias keys in single-pair flow sequence entries are rejected
+
+- **Classification:** Low
+- **Category:** Parser differential through over-strict syntax validation (CWE-436: Interpretation Conflict, CWE-1286: Improper Validation of Syntactic Correctness of Input)
+- **What it is:** Inside a bracket list, an entry can be a one-pair mapping written without braces, such as `[ a: v ]`. The parser allows that shorthand only when the key is unquoted text. A quoted key (`[ "a": v ]`, `[ "a":v ]`, `[ 'a': v ]`, `[ !!str "a": v ]`) or an alias key (`[ &x a, *x : v ]`) makes the whole document fail with an unexpected-character error. The explicit form `[ ? "a" : v ]` works.
+- **Closed:** 2026-11-15

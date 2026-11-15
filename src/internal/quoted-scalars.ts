@@ -285,10 +285,52 @@ const readEscape = (state: ParserState, ownerIndent: number): string => {
   throw unknownEscapeError(state, escapeStart);
 };
 
-export const parseSingleQuoted = (
+const isQuotedQuote = (state: ParserState, quotePosition: number): boolean =>
+  state.source.charCodeAt(quotePosition + 1) === CHAR_SINGLE_QUOTE;
+
+const findSingleQuotedEnd = (
   state: ParserState,
-  ownerIndent: number
-): string => {
+  contentStart: number
+): number => {
+  let cursor = contentStart;
+
+  while (cursor < state.sourceLength) {
+    if (state.source.charCodeAt(cursor) !== CHAR_SINGLE_QUOTE) {
+      cursor++;
+      continue;
+    }
+
+    if (!isQuotedQuote(state, cursor)) return cursor + 1;
+
+    cursor += 2;
+  }
+
+  return state.sourceLength;
+};
+
+const findDoubleQuotedEnd = (
+  state: ParserState,
+  contentStart: number
+): number => {
+  let cursor = contentStart;
+
+  while (cursor < state.sourceLength) {
+    const code = state.source.charCodeAt(cursor);
+
+    if (code === CHAR_DOUBLE_QUOTE) return cursor + 1;
+
+    cursor += code === CHAR_BACKSLASH ? 2 : 1;
+  }
+
+  return state.sourceLength;
+};
+
+export const findQuotedScalarEnd = (state: ParserState): number =>
+  state.source.charCodeAt(state.position) === CHAR_SINGLE_QUOTE
+    ? findSingleQuotedEnd(state, state.position + 1)
+    : findDoubleQuotedEnd(state, state.position + 1);
+
+const parseSingleQuoted = (state: ParserState, ownerIndent: number): string => {
   const openingQuote = state.position;
 
   state.position++;
@@ -312,7 +354,7 @@ export const parseSingleQuoted = (
 
     result += state.source.slice(captureStart, state.position);
 
-    if (state.source.charCodeAt(state.position + 1) !== CHAR_SINGLE_QUOTE) {
+    if (!isQuotedQuote(state, state.position)) {
       state.position++;
       return result;
     }
@@ -330,10 +372,7 @@ export const parseSingleQuoted = (
   );
 };
 
-export const parseDoubleQuoted = (
-  state: ParserState,
-  ownerIndent: number
-): string => {
+const parseDoubleQuoted = (state: ParserState, ownerIndent: number): string => {
   const openingQuote = state.position;
 
   state.position++;
@@ -377,3 +416,11 @@ export const parseDoubleQuoted = (
     openingQuote
   );
 };
+
+export const parseQuotedScalar = (
+  state: ParserState,
+  ownerIndent: number
+): string =>
+  state.source.charCodeAt(state.position) === CHAR_SINGLE_QUOTE
+    ? parseSingleQuoted(state, ownerIndent)
+    : parseDoubleQuoted(state, ownerIndent);

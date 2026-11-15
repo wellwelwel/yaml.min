@@ -9,19 +9,17 @@ import { parseAlias, withAnchor } from './anchors.js';
 import {
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_DOUBLE_QUOTE,
   CHAR_HASH,
   CHAR_LEFT_BRACE,
   CHAR_LEFT_BRACKET,
   CHAR_QUESTION,
   CHAR_RIGHT_BRACE,
   CHAR_RIGHT_BRACKET,
-  CHAR_SINGLE_QUOTE,
   CHAR_STAR,
   isBlank,
-  isContentIndicator,
   isFlowEntryEnd,
   isLineBreak,
+  isQuote,
   isSpaceOrTab,
 } from './chars.js';
 import { enterCollection, leaveCollection } from './depth.js';
@@ -36,7 +34,7 @@ import {
 } from './navigation.js';
 import { parsePlainScalar, unindentedFlowLineError } from './plain-scalars.js';
 import { mergeNodeProperties, readNodeProperties } from './properties.js';
-import { parseDoubleQuoted, parseSingleQuoted } from './quoted-scalars.js';
+import { parseQuotedScalar } from './quoted-scalars.js';
 import {
   checkCollectionTag,
   resolveEmptyNode,
@@ -217,20 +215,23 @@ const closeFlowEntry = (
   return code === CHAR_COMMA;
 };
 
-const isImplicitPairColon = (state: ParserState): boolean =>
-  state.source.charCodeAt(state.position) === CHAR_COLON &&
-  isValueIndicator(state, state.position, true);
+const isJsonLikeNodeStart = (code: number): boolean =>
+  isQuote(code) || code === CHAR_LEFT_BRACKET || code === CHAR_LEFT_BRACE;
 
-const completeImplicitPair = (
+const isImplicitPairColon = (
+  state: ParserState,
+  isJsonLikeKey: boolean
+): boolean =>
+  state.source.charCodeAt(state.position) === CHAR_COLON &&
+  (isJsonLikeKey || isValueIndicator(state, state.position, true));
+
+const parseImplicitPair = (
   state: ParserState,
   ownerIndent: number,
   key: unknown,
+  isQuotedStr: boolean,
   keyStart: number
-): unknown => {
-  skipSpaces(state);
-
-  if (!isImplicitPairColon(state)) return key;
-
+): Record<string, unknown> => {
   checkImplicitKey(state, keyStart);
   enterCollection(state);
 
@@ -241,7 +242,7 @@ const completeImplicitPair = (
     state,
     pair,
     key,
-    false,
+    isQuotedStr,
     keyStart,
     parseFlowValue(state, ownerIndent)
   );
@@ -250,17 +251,15 @@ const completeImplicitPair = (
   return pair;
 };
 
-const parseFlowNode = (
+const parseFlowContent = (
   state: ParserState,
   ownerIndent: number,
   tag: NodeTag | undefined
 ): unknown => {
   const code = state.source.charCodeAt(state.position);
 
-  if (code === CHAR_SINGLE_QUOTE)
-    return resolveTextScalar(state, tag, parseSingleQuoted(state, ownerIndent));
-  if (code === CHAR_DOUBLE_QUOTE)
-    return resolveTextScalar(state, tag, parseDoubleQuoted(state, ownerIndent));
+  if (isQuote(code))
+    return resolveTextScalar(state, tag, parseQuotedScalar(state, ownerIndent));
   if (code === CHAR_LEFT_BRACKET)
     return parseFlowSequence(state, ownerIndent, tag);
   if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
@@ -274,31 +273,44 @@ const parseFlowNode = (
   );
 };
 
-const readFlowNode = (
+const parseFlowNode = (
   state: ParserState,
   ownerIndent: number,
-  allowsImplicitPair: boolean
-): unknown => {
-  const nodeStart = state.position;
-  const properties = readFlowNodeProperties(state, ownerIndent);
-  const canBeImplicitKey =
-    allowsImplicitPair &&
-    !isContentIndicator(state.source.charCodeAt(state.position));
-  const node = withAnchor(
+  properties: NodeProperties | undefined
+): unknown =>
+  withAnchor(
     state,
     properties?.anchor,
-    parseFlowNode(state, ownerIndent, properties?.tag)
+    parseFlowContent(state, ownerIndent, properties?.tag)
   );
 
-  return canBeImplicitKey
-    ? completeImplicitPair(state, ownerIndent, node, nodeStart)
-    : node;
+const readFlowSequenceItem = (
+  state: ParserState,
+  ownerIndent: number
+): unknown => {
+  const itemStart = state.position;
+  const properties = readFlowNodeProperties(state, ownerIndent);
+  const isJsonLikeKey = isJsonLikeNodeStart(
+    state.source.charCodeAt(state.position)
+  );
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
+  const item = parseFlowNode(state, ownerIndent, properties);
+
+  skipSpaces(state);
+
+  return isImplicitPairColon(state, isJsonLikeKey)
+    ? parseImplicitPair(state, ownerIndent, item, isQuotedStr, itemStart)
+    : item;
 };
 
 const parseFlowValue = (state: ParserState, ownerIndent: number): unknown => {
   skipFlowSeparation(state, ownerIndent);
 
-  return readFlowNode(state, ownerIndent, false);
+  return parseFlowNode(
+    state,
+    ownerIndent,
+    readFlowNodeProperties(state, ownerIndent)
+  );
 };
 
 const isExplicitKeyIndicator = (state: ParserState): boolean =>
@@ -333,11 +345,7 @@ const readFlowPair = (
   const keyStart = state.position;
   const properties = readFlowNodeProperties(state, ownerIndent);
   const isQuotedStr = isQuotedStrKey(state, properties?.tag);
-  const key = withAnchor(
-    state,
-    properties?.anchor,
-    parseFlowNode(state, ownerIndent, properties?.tag)
-  );
+  const key = parseFlowNode(state, ownerIndent, properties);
 
   skipFlowSeparation(state, ownerIndent);
   setMapKey(
@@ -370,7 +378,7 @@ const parseFlowSequenceEntry = (
 ): unknown =>
   isExplicitKeyIndicator(state)
     ? parseExplicitPair(state, ownerIndent)
-    : readFlowNode(state, ownerIndent, true);
+    : readFlowSequenceItem(state, ownerIndent);
 
 export const parseFlowSequence = (
   state: ParserState,

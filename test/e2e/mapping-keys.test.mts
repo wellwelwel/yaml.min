@@ -10,7 +10,6 @@ import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
 type Spellings = Record<string, (name: string) => string>;
 
 type KeyForm = {
-  spellings: Spellings;
   document: (key: string, name: string, value: string) => string;
   parsed: (name: string, value: unknown) => unknown;
 };
@@ -149,13 +148,23 @@ describe('A sequence or a mapping is never a mapping key', () => {
       accepted: '[a: value]',
       parsed: [{ a: 'value' }],
     },
+    'a flow mapping as a pair key in a flow sequence': {
+      rejected: '[{a: 1}: value]',
+      accepted: '[a: value]',
+      parsed: [{ a: 'value' }],
+    },
+    'an alias to a sequence as a pair key in a flow sequence': {
+      rejected: '[&node [a, b], *node : value]',
+      accepted: '[&node a, *node : value]',
+      parsed: ['a', { a: 'value' }],
+    },
   };
 
   for (const [name, { rejected, accepted, parsed }] of Object.entries(
     collectionKeys
   )) {
     it(`rejects ${name}`, () =>
-      strict.throws(() => parse(rejected), SyntaxError));
+      strict.throws(() => parse(rejected), { code: 'COLLECTION_KEY' }));
 
     it(`accepts a scalar in place of ${name}`, () =>
       assertParsesTo(accepted, parsed));
@@ -288,11 +297,10 @@ describe('A key that reads as the merge key "<<" never merges', () => {
       document: (key) => `[&name <<, ? ${key} : value]`,
       parsed: ['<<', { '<<': 'value' }],
     },
-  };
-  const flowSequencePairs = {
-    plain: '[<<: value]',
-    'with the non-specific tag': '[! <<: value]',
-    'tagged !!str without quotes': '[!!str <<: value]',
+    'a pair key in a flow sequence': {
+      document: (key) => `[&name <<, ${key}: value]`,
+      parsed: ['<<', { '<<': 'value' }],
+    },
   };
   const mergingDocument = read('mapping-keys--merge-key-holding-alias.yaml');
 
@@ -306,11 +314,6 @@ describe('A key that reads as the merge key "<<" never merges', () => {
       it(`keeps "<<" written ${spelling} as ${form}`, () =>
         assertParsesTo(document(key), parsed));
     }
-  }
-
-  for (const [spelling, input] of Object.entries(flowSequencePairs)) {
-    it(`rejects "<<" written ${spelling} as a pair key in a flow sequence`, () =>
-      strict.throws(() => parse(input), { code: 'MERGE_KEY' }));
   }
 
   it('rejects "<<" holding an aliased mapping', () =>
@@ -349,12 +352,9 @@ describe('A key named after a prototype property is refused unless unsafe keys a
     '__lookupSetter__',
   ];
   const everyName = ['__proto__', 'prototype', ...objectPrototypeMembers];
-  const plainScalarSpellings: Spellings = {
+  const everySpelling: Spellings = {
     plain: (name) => name,
     'with a tag': (name) => `!!str ${name}`,
-  };
-  const everySpelling: Spellings = {
-    ...plainScalarSpellings,
     'double-quoted': (name) => `"${name}"`,
     'single-quoted': (name) => `'${name}'`,
     'with an escape': (name) =>
@@ -363,25 +363,21 @@ describe('A key named after a prototype property is refused unless unsafe keys a
   };
   const keyForms: Record<string, KeyForm> = {
     'a block mapping key': {
-      spellings: everySpelling,
       document: (key, name, value) =>
         `anchor: &name ${name}\n${key}: ${value}\n`,
       parsed: (name, value) => ({ anchor: name, [name]: value }),
     },
     'an explicit key': {
-      spellings: everySpelling,
       document: (key, name, value) =>
         `anchor: &name ${name}\n? ${key}\n: ${value}\n`,
       parsed: (name, value) => ({ anchor: name, [name]: value }),
     },
     'a flow mapping key': {
-      spellings: everySpelling,
       document: (key, name, value) =>
         `{ anchor: &name ${name}, ${key}: ${value} }`,
       parsed: (name, value) => ({ anchor: name, [name]: value }),
     },
     'a flow sequence pair key': {
-      spellings: plainScalarSpellings,
       document: (key, name, value) => `[&name ${name}, ${key}: ${value}]`,
       parsed: (name, value) => [name, { [name]: value }],
     },
@@ -430,10 +426,8 @@ describe('A key named after a prototype property is refused unless unsafe keys a
     }
   };
 
-  for (const [form, { spellings, document, parsed }] of Object.entries(
-    keyForms
-  )) {
-    for (const [spelling, spell] of Object.entries(spellings)) {
+  for (const [form, { document, parsed }] of Object.entries(keyForms)) {
+    for (const [spelling, spell] of Object.entries(everySpelling)) {
       it(`accepts an ordinary key written ${spelling} as ${form} holding a mapping`, () =>
         assertParsesTo(
           document(spell('title'), 'title', mapping.text),
@@ -539,6 +533,11 @@ describe('An implicit key ends on the line where it starts', () => {
       accepted: "'a\\nb': 1\n? 'c\n d'\n: 1\n",
       parsed: { 'a\\nb': 1, 'c d': 1 },
     },
+    'a single-quoted key holding an escaped quote': {
+      rejected: "'it''s\n a': 1\n",
+      accepted: "? 'it''s\n a'\n: 1\n",
+      parsed: { "it's a": 1 },
+    },
     'a quoted key in a mapping inside nested sequence entries': {
       rejected: '- - "bar\n     bar": x\n',
       accepted: '- - "bar bar": x\n',
@@ -553,6 +552,11 @@ describe('An implicit key ends on the line where it starts', () => {
       rejected: '[ &a\n  key: value ]\n',
       accepted: '[ &a key: value ]\n',
       parsed: [{ key: 'value' }],
+    },
+    'a quoted key of a pair in a flow sequence': {
+      rejected: '[ "multi\n  line": value ]\n',
+      accepted: '[ "multi line": value ]\n',
+      parsed: [{ 'multi line': 'value' }],
     },
   };
 
@@ -584,10 +588,20 @@ describe('An implicit key puts its ":" at most 1,024 characters after its start'
       accepted: `${'k'.repeat(1000)}${' '.repeat(24)}: value\n`,
       parsed: { ['k'.repeat(1000)]: 'value' },
     },
+    'a single-quoted block mapping key holding escaped quotes': {
+      rejected: `'${"''".repeat(511)}k': value\n`,
+      accepted: `'${"''".repeat(511)}': value\n`,
+      parsed: { ["'".repeat(511)]: 'value' },
+    },
     'a key of a pair in a flow sequence': {
       rejected: `[${tooLongKey}: value]`,
       accepted: `[${longestKey}: value]`,
       parsed: [{ [longestKey]: 'value' }],
+    },
+    'a quoted key of a pair in a flow sequence': {
+      rejected: `["${'k'.repeat(1023)}": value]`,
+      accepted: `["${'k'.repeat(1022)}": value]`,
+      parsed: [{ ['k'.repeat(1022)]: 'value' }],
     },
     'an anchored block mapping key': {
       rejected: `&a ${'k'.repeat(1022)}: value\n`,

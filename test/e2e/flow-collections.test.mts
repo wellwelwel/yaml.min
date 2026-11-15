@@ -116,6 +116,43 @@ describe('A "key: value" item of a flow sequence is a single-pair mapping', () =
   }
 });
 
+describe('A quoted or aliased key can start a single pair in a flow sequence', () => {
+  const keyedPairs = {
+    'a double-quoted key': { input: '[ "a": v ]', expected: [{ a: 'v' }] },
+    'a single-quoted key holding an escaped quote': {
+      input: "[ 'it''s': v ]",
+      expected: [{ "it's": 'v' }],
+    },
+    'a tagged quoted key': {
+      input: '[ !!str "a": v ]',
+      expected: [{ a: 'v' }],
+    },
+    'a quoted key whose value touches the colon': {
+      input: '[ "a":v ]',
+      expected: [{ a: 'v' }],
+    },
+    'a quoted key with a space before a colon that touches the value': {
+      input: '[ "a" :v ]',
+      expected: [{ a: 'v' }],
+    },
+    'a quoted key without a value': {
+      input: '[ "a": ]',
+      expected: [{ a: null }],
+    },
+    'an alias key': {
+      input: '[ &x a, *x : v ]',
+      expected: ['a', { a: 'v' }],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(keyedPairs)) {
+    it(`reads ${name}`, () => assertParsesTo(input, expected));
+  }
+
+  it('rejects an alias key whose colon touches its value', () =>
+    strict.throws(() => parse('[ &x a, *x :v ]'), SyntaxError));
+});
+
 describe('A ":" followed by a tab or a line break separates a flow key from its value', () => {
   const separatedPairs = {
     'a tab in a flow mapping': {
@@ -257,6 +294,8 @@ describe('A pair never starts inside the value of another pair', () => {
       '{ role: user\n  admin: true }',
     'a second colon in a flow mapping entry': '{ a: b: c }',
     'a second colon in a flow sequence pair': '[ a: b: c ]',
+    'a second colon after a quoted value in a flow sequence pair':
+      '[ "a": "b": c ]',
     'a second colon before a tab in a flow mapping entry': '{ a: b:\tc }',
     'a second colon before a tab in a flow sequence pair': '[ a: b:\tc ]',
     'a second colon before a line break in a flow mapping entry':
