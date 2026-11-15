@@ -322,19 +322,6 @@ try {
 
 ---
 
-## Untrusted Input
-
-- `maxDepth` keeps a hostile document from exhausting the call stack, in the parser or in your code that walks the result.
-- In total, aliases repeat at most the larger of 1,000,000 characters and 10 times the input length, so a few nested aliases can't expand into gigabytes.
-- Input size is not limited, and parsing time grows linearly with it, so cap the size of untrusted input before parsing.
-- Every key lands as an own property, so parsing never changes a prototype. Keys named `__proto__`, `prototype`, or after another `Object.prototype` member, such as `constructor` or `toString`, are rejected, since they shadow built-in members and copying the result with `Object.assign` or a deep merge can turn them into prototype pollution. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
-- Merge results only with code that never descends into functions or inherited properties, or keys such as `call` and `slice` can overwrite built-ins in the target.
-- Check for a key with `Object.hasOwn`, not `in`, which also finds inherited members.
-- Values can hold control characters through escapes such as `\e` and `\0` (NUL), and bidirectional marks such as U+202E. Escape or strip them before writing values to a terminal or log or passing them as command arguments, and reject NUL where code treats it as the end of a string.
-- Keys are not Unicode-normalized, so lookalike keys, such as one with a zero-width space or a decomposed accent, stay distinct. Flag them when reviewing files from untrusted authors.
-
----
-
 ## TypeScript
 
 `parse` returns `unknown` and `parseAll` returns `unknown[]`, since a document can hold any shape. Check the shape before using it:
@@ -371,6 +358,19 @@ config.database.port; // number
 ```
 
 `ParseOptions` and `YamlErrorCode` are also exported.
+
+---
+
+## Untrusted Input
+
+- `maxDepth` keeps a hostile document from exhausting the call stack, in the parser or in your code that walks the result.
+- In total, aliases repeat at most the larger of 1,000,000 characters and 10 times the input length, so a few nested aliases can't expand into gigabytes.
+- Input size is not limited, and parsing time grows linearly with it, so cap the size of untrusted input before parsing.
+- Every key lands as an own property, so parsing never changes a prototype. Keys named `__proto__`, `prototype`, or after another `Object.prototype` member, such as `constructor` or `toString`, are rejected, since they shadow built-in members and copying the result with `Object.assign` or a deep merge can turn them into prototype pollution. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
+- Merge results only with code that never descends into functions or inherited properties, or keys such as `call` and `slice` can overwrite built-ins in the target.
+- Check for a key with `Object.hasOwn`, not `in`, which also finds inherited members.
+- Values can hold control characters through escapes such as `\e` and `\0` (NUL), and bidirectional marks such as U+202E. Escape or strip them before writing values to a terminal or log or passing them as command arguments, and reject NUL where code treats it as the end of a string.
+- Keys are not Unicode-normalized, so lookalike keys, such as one with a zero-width space or a decomposed accent, stay distinct. Flag them when reviewing files from untrusted authors.
 
 ---
 
