@@ -42,6 +42,10 @@ const rejectNonPrintable = (state: ParserState): void => {
   );
 };
 
+// V8 reads the flat copy that a join builds faster than a slice.
+const withoutByteOrderMark = (input: string): string =>
+  [input.slice(1, 2), input.slice(2)].join('');
+
 export const createParserState = (
   input: string,
   options: ParseOptions | undefined
@@ -53,7 +57,9 @@ export const createParserState = (
 
   const maxDepth = readMaxDepth(options);
   const source =
-    input.charCodeAt(0) === CHAR_BYTE_ORDER_MARK ? input.slice(1) : input;
+    input.charCodeAt(0) === CHAR_BYTE_ORDER_MARK
+      ? withoutByteOrderMark(input)
+      : input;
   const state: ParserState = {
     source,
     sourceLength: source.length,
