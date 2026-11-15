@@ -6,6 +6,16 @@ const {
   parse,
 }: typeof import('../../src/index.ts') = require('../../src/index.ts');
 
+const REFERENCE_DOCUMENT = '- item\n'.repeat(30_000);
+
+const referenceMillisecondsPerCharacter = (): number => {
+  const start = performance.now();
+
+  parse(REFERENCE_DOCUMENT);
+
+  return (performance.now() - start) / REFERENCE_DOCUMENT.length;
+};
+
 const describeOutcome = (input: string): string => {
   try {
     parse(input);
@@ -22,4 +32,4 @@ parentPort?.on('message', (input: string) => {
   parentPort?.postMessage(describeOutcome(input));
 });
 
-parentPort?.postMessage('ready');
+parentPort?.postMessage(referenceMillisecondsPerCharacter());

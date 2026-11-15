@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         benchmark:
-          - yaml
+          # - yaml
           - js-yaml
     name: Compare — ${{ matrix.benchmark }}
     steps:

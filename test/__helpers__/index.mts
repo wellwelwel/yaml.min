@@ -14,7 +14,9 @@ export const {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PARSE_TIME_LIMIT_IN_MILLISECONDS = 500;
+const MINIMUM_TIME_LIMIT_IN_MILLISECONDS = 500;
+// The parser runs several times slower while coverage is collected, and slower still on a shared CI runner.
+const TIME_LIMIT_IN_REFERENCE_PARSES = 5;
 const ISOLATED_PARSER_SCRIPT = new URL('./isolated-parse.mts', import.meta.url);
 
 export const read = (name: string): string =>
@@ -39,11 +41,16 @@ export const parseWithinTimeLimit = (input: string): Promise<string> =>
     };
 
     worker.once('error', (error) => settle(`crashed: ${error.message}`));
-    worker.once('message', () => {
+    worker.once('message', (referenceMillisecondsPerCharacter: number) => {
       worker.once('message', settle);
       deadline = setTimeout(
         () => settle('timed out'),
-        PARSE_TIME_LIMIT_IN_MILLISECONDS
+        Math.max(
+          MINIMUM_TIME_LIMIT_IN_MILLISECONDS,
+          TIME_LIMIT_IN_REFERENCE_PARSES *
+            referenceMillisecondsPerCharacter *
+            input.length
+        )
       );
       worker.postMessage(input);
     });
