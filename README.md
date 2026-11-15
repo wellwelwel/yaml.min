@@ -325,7 +325,7 @@ try {
 
 ## TypeScript
 
-`parse` returns `unknown` and `parseAll` returns `unknown[]`, since a document can hold any shape. Check the shape before using it:
+Without a type argument, `parse` returns `unknown` and `parseAll` returns `unknown[]`, since a document can hold any shape. Check the shape before using it:
 
 ```ts
 import { parse } from 'yaml.min';
@@ -358,7 +358,21 @@ config.database.host; // string
 config.database.port; // number
 ```
 
-`ParseOptions` and `YamlErrorCode` are also exported.
+For input you trust, a type argument names the shape instead. Nothing checks it against the document:
+
+```ts
+const config = parse<Config>(`
+  database:
+    host: localhost
+    port: 5432
+`);
+
+config.database.host; // string
+config.database.port; // number
+```
+
+- `parseAll<Config>` names the shape of every document in the stream.
+- `ParseOptions` and `YamlErrorCode` are also exported, and the types require **TypeScript** 5.4 or later.
 
 ---
 

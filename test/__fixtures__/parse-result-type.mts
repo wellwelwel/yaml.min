@@ -5,8 +5,8 @@ type ServerConfig = { port: number };
 const readPort = (config: ServerConfig): number => config.port;
 const readPorts = (configs: ServerConfig[]): number[] => configs.map(readPort);
 
-// @ts-expect-error
-parse<ServerConfig>('port: 80');
+readPort(parse<ServerConfig>('port: 80'));
+readPorts(parseAll<ServerConfig>('port: 80\n---\nport: 81\n'));
 
 // @ts-expect-error
 readPort(parse('port: 80'));

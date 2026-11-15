@@ -58,7 +58,7 @@ describe('Input validation', () => {
 });
 
 describe('Result type', () => {
-  it('leaves the caller to validate the shape of parsed data', () => {
+  it('stays unknown until the caller names the shape of parsed data', () => {
     const typeErrors = typeErrorsIn(RESULT_TYPE_FIXTURE);
 
     strict.deepEqual(typeErrors, []);

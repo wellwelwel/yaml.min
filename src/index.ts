@@ -53,7 +53,7 @@ const readEveryDocument = (state: ParserState): unknown[] => {
 /**
  * Parses a YAML v1.2 string that holds a single document.
  *
- * - The result is `unknown`: validate its shape before use.
+ * - The result is `unknown`: validate its shape before use. A type argument, as in `parse<Config>(input)`, names the shape without checking it, so pass one only for input you trust.
  * - It holds only plain objects, arrays, strings, numbers, booleans, and `null`, with integers as `BigInt` when `bigint` is `true`, never `undefined`.
  * - Its collections nest at most `maxDepth` levels deep (256 by default), counting the levels each alias repeats.
  * - No mapping key in it is named `__proto__`, `prototype`, or after another `Object.prototype` member, such as `constructor` or `toString`, unless `allowUnsafeKeys` is `true`.
@@ -71,13 +71,16 @@ const readEveryDocument = (state: ParserState): unknown[] => {
  * @throws {YamlError} When a mapping key reads as `<<`, the merge key some parsers apply, whether plain, quoted, or through an alias, unless it is a quoted scalar tagged `!!str`.
  * @throws {YamlError} When a tag is not a core schema tag, uses a handle no `%TAG` directive declares, labels an alias, or labels a value that does not fit it, such as `!!int "five"`.
  */
-export const parse = (input: string, options?: ParseOptions): unknown =>
-  readWithinEngineLimits(input, options, readSingleDocument);
+export const parse = <Shape = unknown>(
+  input: string,
+  options?: ParseOptions
+): NoInfer<Shape> =>
+  readWithinEngineLimits(input, options, readSingleDocument) as Shape;
 
 /**
  * Parses every document in a YAML v1.2 stream, in order, and returns an empty array for an empty stream.
  *
- * Each document follows the same contract as `parse`, and an anchor is only visible inside its own document.
+ * Each document follows the same contract as `parse`, a type argument names the shape of every document, and an anchor is only visible inside its own document.
  *
  * @throws {TypeError} When `input` is not a string, or `maxDepth` is not an integer from 0 to 400.
  * @throws {YamlError} When any document in `input` is not valid YAML, nests collections more than `maxDepth` levels deep (including the levels aliases repeat), has an alias inside the node its own anchor labels, or exhausts an engine limit such as the call stack.
@@ -86,5 +89,8 @@ export const parse = (input: string, options?: ParseOptions): unknown =>
  * @throws {YamlError} When a tag in any document is not a core schema tag, uses a handle no `%TAG` directive of that document declares, labels an alias, or labels a value that does not fit it.
  * @throws {YamlError} When the aliases of all documents together repeat more than the larger of 1,000,000 characters and 10 times the length of `input`.
  */
-export const parseAll = (input: string, options?: ParseOptions): unknown[] =>
-  readWithinEngineLimits(input, options, readEveryDocument);
+export const parseAll = <Shape = unknown>(
+  input: string,
+  options?: ParseOptions
+): NoInfer<Shape>[] =>
+  readWithinEngineLimits(input, options, readEveryDocument) as Shape[];
