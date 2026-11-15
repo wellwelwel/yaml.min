@@ -20,13 +20,11 @@ jobs:
       releases_created: ${{ steps.release.outputs.releases_created }}
     steps:
       - name: 🤝 Release Please
-        uses: google-github-actions/release-please-action@db8f2c60ee802b3748b512940dde88eabd7b7e01 # v3.7.13
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           release-type: node
-          package-name: yaml.min
-          changelog-path: 'CHANGELOG.md'
 
   publish:
     needs: release-please
@@ -40,19 +38,19 @@ jobs:
       id-token: write
     steps:
       - name: ➕ Actions - Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: ➕ Actions - Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           check-latest: true
           node-version: lts/*
           registry-url: 'https://registry.npmjs.org'
 
       - name: ➕ Cache dependencies
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.npm
           key: npm-linux-${{ hashFiles('package-lock.json') }}
