@@ -7,12 +7,6 @@
       "skillPath": "skills/development/engineering/SKILL.md",
       "computedHash": "e6044c9bdb37bad54cefd2e68b88e5b2f459a4c9ce609cc940fadf3074a9e0ad"
     },
-    "ingest": {
-      "source": "wellwelwel/skills",
-      "sourceType": "github",
-      "skillPath": "skills/development/ingest/SKILL.md",
-      "computedHash": "c7cfa922f7cfc47fb36dad340ad3b59c5a7602660efabbbcc4b166d22d04d980"
-    },
     "lagune": {
       "source": "wellwelwel/lagune",
       "sourceType": "github",
