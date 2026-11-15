@@ -1,208 +1,421 @@
-import type { ParserState } from '../types.js';
+import type { YamlError } from '../error.js';
+import type {
+  FlowCollection,
+  NodeProperties,
+  NodeTag,
+  ParserState,
+} from '../types.js';
+import { parseAlias, withAnchor } from './anchors.js';
 import {
   CHAR_COLON,
   CHAR_COMMA,
-  CHAR_CR,
-  CHAR_DQUOTE,
-  CHAR_LBRACE,
-  CHAR_LBRACKET,
-  CHAR_LF,
+  CHAR_HASH,
+  CHAR_LEFT_BRACE,
+  CHAR_LEFT_BRACKET,
   CHAR_QUESTION,
-  CHAR_RBRACE,
-  CHAR_RBRACKET,
-  CHAR_SPACE,
-  CHAR_SQUOTE,
+  CHAR_RIGHT_BRACE,
+  CHAR_RIGHT_BRACKET,
   CHAR_STAR,
-  CHAR_TAB,
+  isBlank,
+  isFlowEntryEnd,
+  isJsonLikeNodeStart,
+  isLineBreak,
+  isQuote,
+  isSpaceOrTab,
 } from './chars.js';
+import { enterCollection, leaveCollection } from './depth.js';
+import { characterAt, quote, yamlError } from './errors.js';
+import { checkImplicitKey, isQuotedStrKey, setMapKey } from './keys.js';
 import {
-  parseAlias,
-  readAnchorOrTag,
-  skipBlanksAndComments,
+  countIndentSpaces,
+  isDocumentBoundary,
+  isValueIndicator,
+  skipComment,
   skipSpaces,
+  skipSpacesFrom,
 } from './navigation.js';
-import { resolveScalar, setMapKey } from './scalars.js';
+import { parsePlainScalar, unindentedFlowLineError } from './plain-scalars.js';
+import { mergeNodeProperties, readNodeProperties } from './properties.js';
+import { parseQuotedScalar } from './quoted-scalars.js';
 import {
-  parseDoubleQuoted,
-  parsePlainScalar,
-  parseSingleQuoted,
-} from './strings.js';
+  checkCollectionTag,
+  resolveEmptyNode,
+  resolvePlainScalar,
+  resolveTextScalar,
+} from './tags.js';
 
-export const parseFlowSeq = (state: ParserState): unknown[] => {
-  state.pos++;
+const FLOW_SEQUENCE: FlowCollection = {
+  name: 'flow sequence',
+  open: '[',
+  close: ']',
+  closeCode: CHAR_RIGHT_BRACKET,
+  foreignCloseCode: CHAR_RIGHT_BRACE,
+};
 
-  const result: unknown[] = [];
+const FLOW_MAPPING: FlowCollection = {
+  name: 'flow mapping',
+  open: '{',
+  close: '}',
+  closeCode: CHAR_RIGHT_BRACE,
+  foreignCloseCode: CHAR_RIGHT_BRACKET,
+};
 
-  skipBlanksAndComments(state);
+const enterFlowLine = (state: ParserState, ownerIndent: number): void => {
+  const lineStart = state.position;
+  const indent = countIndentSpaces(state, lineStart);
+  const cursor = skipSpacesFrom(state, lineStart + indent);
 
-  while (
-    state.pos < state.len &&
-    state.src.charCodeAt(state.pos) !== CHAR_RBRACKET
-  ) {
-    readAnchorOrTag(state);
+  state.position = cursor;
 
-    const anchor = state.lastAnchor;
+  if (cursor >= state.sourceLength) return;
 
-    skipSpaces(state);
+  const code = state.source.charCodeAt(cursor);
 
-    const value = parseFlowValue(state);
+  if (
+    isLineBreak(code) ||
+    code === CHAR_HASH ||
+    code === CHAR_RIGHT_BRACKET ||
+    code === CHAR_RIGHT_BRACE
+  )
+    return;
 
-    if (anchor) state.anchors.set(anchor, value);
+  if (isDocumentBoundary(state, lineStart))
+    throw yamlError(
+      state,
+      'UNEXPECTED_DOCUMENT_MARKER',
+      'A document boundary interrupts a flow collection: expected the collection to close before the line that starts with "---", "...", or a byte order mark',
+      lineStart
+    );
 
-    result.push(value);
+  if (indent <= ownerIndent)
+    throw unindentedFlowLineError(state, ownerIndent, cursor);
+};
 
-    skipBlanksAndComments(state);
+const skipFlowSeparation = (state: ParserState, ownerIndent: number): void => {
+  while (state.position < state.sourceLength) {
+    const code = state.source.charCodeAt(state.position);
 
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COMMA
-    ) {
-      state.pos++;
-      skipBlanksAndComments(state);
+    if (isSpaceOrTab(code)) {
+      state.position++;
+      continue;
     }
+
+    if (code === CHAR_HASH) {
+      skipComment(state);
+      continue;
+    }
+
+    if (!isLineBreak(code)) return;
+
+    state.position++;
+    enterFlowLine(state, ownerIndent);
+  }
+};
+
+const skipFlowIndicator = (state: ParserState, ownerIndent: number): void => {
+  state.position++;
+  skipFlowSeparation(state, ownerIndent);
+};
+
+const readFlowNodeProperties = (
+  state: ParserState,
+  ownerIndent: number
+): NodeProperties | undefined => {
+  let properties: NodeProperties | undefined;
+  let lineProperties = readNodeProperties(state, true);
+
+  while (lineProperties !== undefined) {
+    properties = mergeNodeProperties(state, properties, lineProperties);
+    skipFlowSeparation(state, ownerIndent);
+    lineProperties = readNodeProperties(state, true);
   }
 
-  if (state.pos < state.len) state.pos++;
-
-  return result;
+  return properties;
 };
 
-export const parseFlowMap = (state: ParserState): Record<string, unknown> => {
-  state.pos++;
+const isFlowTerminator = (state: ParserState): boolean =>
+  state.position >= state.sourceLength ||
+  isFlowEntryEnd(state.source.charCodeAt(state.position));
 
-  const result: Record<string, unknown> = {};
+const unclosedCollectionError = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number
+): YamlError =>
+  yamlError(
+    state,
+    'UNTERMINATED_FLOW_COLLECTION',
+    `Unclosed ${collection.name}: expected "${collection.close}" to close the "${collection.open}" before the end of input`,
+    openedAt
+  );
 
-  skipBlanksAndComments(state);
+const unexpectedCharacterError = (
+  state: ParserState,
+  collection: FlowCollection,
+  expected: string
+): YamlError =>
+  yamlError(
+    state,
+    'UNEXPECTED_CHARACTER',
+    `Unexpected ${quote(characterAt(state, state.position))} in a ${collection.name}: expected ${expected}`
+  );
 
-  while (
-    state.pos < state.len &&
-    state.src.charCodeAt(state.pos) !== CHAR_RBRACE
-  ) {
-    if (state.src.charCodeAt(state.pos) === CHAR_QUESTION) {
-      const questionNext = state.src.charCodeAt(state.pos + 1);
+const skipToFlowBoundary = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): number => {
+  skipFlowSeparation(state, ownerIndent);
 
-      if (
-        questionNext === CHAR_SPACE ||
-        questionNext === CHAR_TAB ||
-        questionNext === CHAR_LF ||
-        questionNext === CHAR_CR
-      ) {
-        state.pos++;
-        skipBlanksAndComments(state);
-      }
-    }
+  if (state.position >= state.sourceLength)
+    throw unclosedCollectionError(state, collection, openedAt);
 
-    readAnchorOrTag(state);
+  return state.source.charCodeAt(state.position);
+};
 
-    const keyAnchor = state.lastAnchor;
+const openFlowEntry = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): boolean => {
+  const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
-    skipSpaces(state);
-
-    const key = parseFlowScalarKey(state);
-
-    if (keyAnchor) state.anchors.set(keyAnchor, key);
-
-    skipBlanksAndComments(state);
-
-    let value: unknown = null;
-
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COLON
-    ) {
-      state.pos++;
-      skipBlanksAndComments(state);
-
-      if (state.pos < state.len) {
-        const valueCode = state.src.charCodeAt(state.pos);
-
-        if (valueCode !== CHAR_COMMA && valueCode !== CHAR_RBRACE) {
-          readAnchorOrTag(state);
-
-          const valAnchor = state.lastAnchor;
-
-          skipSpaces(state);
-
-          value = parseFlowValue(state);
-
-          if (valAnchor) state.anchors.set(valAnchor, value);
-        }
-      }
-    }
-
-    setMapKey(result, String(key), value);
-    skipBlanksAndComments(state);
-
-    if (
-      state.pos < state.len &&
-      state.src.charCodeAt(state.pos) === CHAR_COMMA
-    ) {
-      state.pos++;
-      skipBlanksAndComments(state);
-    }
+  if (code === collection.closeCode) {
+    state.position++;
+    return false;
   }
 
-  if (state.pos < state.len) state.pos++;
+  if (code === collection.foreignCloseCode || code === CHAR_COMMA)
+    throw unexpectedCharacterError(
+      state,
+      collection,
+      `an entry or "${collection.close}"`
+    );
 
-  return result;
+  return true;
 };
 
-export const parseFlowScalarKey = (state: ParserState): unknown => {
-  const code = state.src.charCodeAt(state.pos);
+const closeFlowEntry = (
+  state: ParserState,
+  collection: FlowCollection,
+  openedAt: number,
+  ownerIndent: number
+): boolean => {
+  const code = skipToFlowBoundary(state, collection, openedAt, ownerIndent);
 
-  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LBRACKET) return parseFlowSeq(state);
-  if (code === CHAR_LBRACE) return parseFlowMap(state);
-  if (code === CHAR_STAR) return parseAlias(state);
-  return resolveScalar(parsePlainScalar(state, 0, true));
+  if (code !== CHAR_COMMA && code !== collection.closeCode)
+    throw unexpectedCharacterError(
+      state,
+      collection,
+      `"," or "${collection.close}"`
+    );
+
+  state.position++;
+
+  return code === CHAR_COMMA;
 };
 
-export const parseFlowValue = (state: ParserState): unknown => {
-  skipBlanksAndComments(state);
+const isImplicitPairColon = (
+  state: ParserState,
+  isJsonLikeKey: boolean
+): boolean =>
+  state.source.charCodeAt(state.position) === CHAR_COLON &&
+  (isJsonLikeKey || isValueIndicator(state, state.position, true));
 
-  const code = state.src.charCodeAt(state.pos);
+const parseImplicitPair = (
+  state: ParserState,
+  ownerIndent: number,
+  key: unknown,
+  isQuotedStr: boolean,
+  keyStart: number
+): Record<string, unknown> => {
+  checkImplicitKey(state, keyStart, true);
+  enterCollection(state);
 
-  if (code === CHAR_SQUOTE) return parseSingleQuoted(state);
-  if (code === CHAR_DQUOTE) return parseDoubleQuoted(state);
-  if (code === CHAR_LBRACKET) return parseFlowSeq(state);
-  if (code === CHAR_LBRACE) return parseFlowMap(state);
-  if (code === CHAR_STAR) return parseAlias(state);
+  const pair: Record<string, unknown> = {};
 
-  const raw = parsePlainScalar(state, 0, true);
+  skipFlowIndicator(state, ownerIndent);
+  setMapKey(
+    state,
+    pair,
+    key,
+    isQuotedStr,
+    keyStart,
+    parseFlowValue(state, ownerIndent)
+  );
+  leaveCollection(state);
+
+  return pair;
+};
+
+const parseFlowContent = (
+  state: ParserState,
+  ownerIndent: number,
+  tag: NodeTag | undefined
+): unknown => {
+  const code = state.source.charCodeAt(state.position);
+
+  if (isQuote(code))
+    return resolveTextScalar(state, tag, parseQuotedScalar(state, ownerIndent));
+  if (code === CHAR_LEFT_BRACKET)
+    return parseFlowSequence(state, ownerIndent, tag);
+  if (code === CHAR_LEFT_BRACE) return parseFlowMap(state, ownerIndent, tag);
+  if (code === CHAR_STAR) return parseAlias(state, tag);
+  if (isFlowTerminator(state)) return resolveEmptyNode(state, tag);
+
+  return resolvePlainScalar(
+    state,
+    tag,
+    parsePlainScalar(state, ownerIndent, true)
+  );
+};
+
+const parseFlowNode = (
+  state: ParserState,
+  ownerIndent: number,
+  properties: NodeProperties | undefined
+): unknown =>
+  withAnchor(
+    state,
+    properties?.anchor,
+    parseFlowContent(state, ownerIndent, properties?.tag)
+  );
+
+const readFlowSequenceItem = (
+  state: ParserState,
+  ownerIndent: number
+): unknown => {
+  const itemStart = state.position;
+  const properties = readFlowNodeProperties(state, ownerIndent);
+  const isJsonLikeKey = isJsonLikeNodeStart(
+    state.source.charCodeAt(state.position)
+  );
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
+  const item = parseFlowNode(state, ownerIndent, properties);
 
   skipSpaces(state);
 
-  if (state.pos < state.len && state.src.charCodeAt(state.pos) === CHAR_COLON) {
-    const afterColon =
-      state.pos + 1 >= state.len ? -1 : state.src.charCodeAt(state.pos + 1);
+  return isImplicitPairColon(state, isJsonLikeKey)
+    ? parseImplicitPair(state, ownerIndent, item, isQuotedStr, itemStart)
+    : item;
+};
 
-    if (
-      afterColon === -1 ||
-      afterColon === CHAR_SPACE ||
-      afterColon === CHAR_COMMA ||
-      afterColon === CHAR_RBRACKET
-    ) {
-      const key = String(resolveScalar(raw));
+const parseFlowValue = (state: ParserState, ownerIndent: number): unknown =>
+  parseFlowNode(state, ownerIndent, readFlowNodeProperties(state, ownerIndent));
 
-      state.pos++;
-      skipBlanksAndComments(state);
+const isExplicitKeyIndicator = (state: ParserState): boolean =>
+  state.source.charCodeAt(state.position) === CHAR_QUESTION &&
+  isBlank(state.source.charCodeAt(state.position + 1));
 
-      const pair: Record<string, unknown> = {};
+const skipExplicitKeyIndicator = (
+  state: ParserState,
+  ownerIndent: number
+): void => {
+  if (isExplicitKeyIndicator(state)) skipFlowIndicator(state, ownerIndent);
+};
 
-      const isTerminator =
-        state.pos >= state.len ||
-        state.src.charCodeAt(state.pos) === CHAR_COMMA ||
-        state.src.charCodeAt(state.pos) === CHAR_RBRACKET ||
-        state.src.charCodeAt(state.pos) === CHAR_RBRACE;
+const parseFlowMapValue = (
+  state: ParserState,
+  ownerIndent: number
+): unknown => {
+  if (state.source.charCodeAt(state.position) !== CHAR_COLON) return null;
 
-      const value = isTerminator ? null : parseFlowValue(state);
+  skipFlowIndicator(state, ownerIndent);
 
-      setMapKey(pair, key, value);
+  return parseFlowValue(state, ownerIndent);
+};
 
-      return pair;
-    }
+const readFlowPair = (
+  state: ParserState,
+  target: Record<string, unknown>,
+  ownerIndent: number
+): void => {
+  skipExplicitKeyIndicator(state, ownerIndent);
+
+  const keyStart = state.position;
+  const properties = readFlowNodeProperties(state, ownerIndent);
+  const isQuotedStr = isQuotedStrKey(state, properties?.tag);
+  const key = parseFlowNode(state, ownerIndent, properties);
+
+  skipFlowSeparation(state, ownerIndent);
+  setMapKey(
+    state,
+    target,
+    key,
+    isQuotedStr,
+    keyStart,
+    parseFlowMapValue(state, ownerIndent)
+  );
+};
+
+const parseExplicitPair = (
+  state: ParserState,
+  ownerIndent: number
+): Record<string, unknown> => {
+  enterCollection(state);
+
+  const pair: Record<string, unknown> = {};
+
+  readFlowPair(state, pair, ownerIndent);
+  leaveCollection(state);
+
+  return pair;
+};
+
+const parseFlowSequenceEntry = (
+  state: ParserState,
+  ownerIndent: number
+): unknown =>
+  isExplicitKeyIndicator(state)
+    ? parseExplicitPair(state, ownerIndent)
+    : readFlowSequenceItem(state, ownerIndent);
+
+export const parseFlowSequence = (
+  state: ParserState,
+  ownerIndent: number,
+  tag: NodeTag | undefined
+): unknown[] => {
+  enterCollection(state);
+  checkCollectionTag(state, tag, 'seq');
+
+  const openedAt = state.position;
+  const result: unknown[] = [];
+
+  state.position++;
+
+  while (openFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) {
+    result.push(parseFlowSequenceEntry(state, ownerIndent));
+
+    if (!closeFlowEntry(state, FLOW_SEQUENCE, openedAt, ownerIndent)) break;
   }
 
-  return resolveScalar(raw);
+  leaveCollection(state);
+
+  return result;
+};
+
+export const parseFlowMap = (
+  state: ParserState,
+  ownerIndent: number,
+  tag: NodeTag | undefined
+): Record<string, unknown> => {
+  enterCollection(state);
+  checkCollectionTag(state, tag, 'map');
+
+  const openedAt = state.position;
+  const result: Record<string, unknown> = {};
+
+  state.position++;
+
+  while (openFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) {
+    readFlowPair(state, result, ownerIndent);
+
+    if (!closeFlowEntry(state, FLOW_MAPPING, openedAt, ownerIndent)) break;
+  }
+
+  leaveCollection(state);
+
+  return result;
 };

@@ -180,10 +180,10 @@ anchors:
     port: 5432
   development:
     database: dev_db
-    <<: *defaults
+    connection: *defaults
   production:
     database: prod_db
-    <<: *defaults
+    connection: *defaults
   shared_value: &shared_val shared_content
   ref_value: *shared_val
   shared_list: &shared_list

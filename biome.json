@@ -3,6 +3,7 @@
   "files": {
     "include": ["**/**"],
     "ignore": [
+      ".agents",
       "node_modules",
       "lib",
       "browser",

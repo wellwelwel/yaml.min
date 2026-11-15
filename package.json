@@ -25,7 +25,7 @@
   "scripts": {
     "prebuild": "rm -rf lib",
     "build": "esbuild src/index.ts --bundle --platform=node --target=node18 --format=cjs --outfile=lib/index.js && tsc",
-    "postbuild": "find lib -name '*.d.ts' ! -name 'index.d.ts' -delete && find lib -type d -empty -delete",
+    "postbuild": "find lib -name '*.d.ts' ! -name 'index.d.ts' ! -name 'types.d.ts' ! -name 'error.d.ts' -delete && find lib -type d -empty -delete",
     "test": "poku -r=compact",
     "test:bun": "bun --bun poku -r=compact",
     "test:deno": "deno run -A npm:poku -r=compact",

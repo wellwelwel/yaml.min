@@ -5,12 +5,20 @@ on:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   stale:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     name: Issues and PRs
+    permissions:
+      actions: write
+      issues: write
+      pull-requests: write
     steps:
-      - uses: actions/stale@v9
+      - name: 🧹 Stale
+        uses: actions/stale@5bef64f19d7facfb25b37b414482c7164d639639 # v9.1.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           stale-issue-message: 'This issue is stale because it has been open 28 days with no activity. Remove the stale label or comment or this will be closed in 2 days'

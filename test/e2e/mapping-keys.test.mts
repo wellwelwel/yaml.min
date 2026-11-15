@@ -1,0 +1,630 @@
+/*!
+ * Scenarios derived from the https://github.com/eemeli/yaml test suite:
+ *   tests/doc/parse.ts, tests/doc/errors.ts,
+ *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
+ */
+
+import { describe, it, strict } from 'poku';
+import { assertParsesTo, parse, read } from '../__helpers__/index.mts';
+
+type Spellings = Record<string, (name: string) => string>;
+
+type KeyForm = {
+  document: (key: string, name: string, value: string) => string;
+  parsed: (name: string, value: unknown) => unknown;
+};
+
+type KeyDocument = {
+  document: (key: string) => string;
+  parsed: unknown;
+};
+
+type HeldValue = { text: string; parsed: unknown };
+
+type KeyCase = {
+  rejected: string;
+  accepted: string;
+  parsed: unknown;
+};
+
+describe('Mapping keys follow one naming rule in both syntaxes', () => {
+  const parsedKeys = {
+    text: 1,
+    quoted: 2,
+    '16': 3,
+    '17': 4,
+    '1.5': 5,
+    true: 6,
+    '': 7,
+  };
+
+  it('names block mapping keys by the text form of their scalar', () =>
+    assertParsesTo(
+      'text: 1\n"quoted": 2\n16: 3\n0x11: 4\n1.5: 5\ntrue: 6\n~: 7\n',
+      parsedKeys
+    ));
+
+  it('names flow mapping keys by the same rule', () =>
+    assertParsesTo(
+      '{text: 1, "quoted": 2, 16: 3, 0x11: 4, 1.5: 5, true: 6, ~: 7}',
+      parsedKeys
+    ));
+});
+
+describe('A key can be empty before its ":"', () => {
+  const emptyKeys = {
+    'a block mapping': { input: ': value\n', expected: { '': 'value' } },
+    'a flow mapping': { input: '{ : value }\n', expected: { '': 'value' } },
+    'a flow mapping with the value on the next line': {
+      input: '{ :\n  value }\n',
+      expected: { '': 'value' },
+    },
+    'an explicit key holding only a comment': {
+      input: '? # note\n: value\n',
+      expected: { '': 'value' },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(emptyKeys)) {
+    it(`reads the empty key of ${name}`, () =>
+      strict.deepEqual(parse(input), expected));
+  }
+});
+
+describe('A sequence or a mapping is never a mapping key', () => {
+  const collectionKeys: Record<string, KeyCase> = {
+    'a flow sequence as an explicit block key': {
+      rejected: read('mapping-keys--collection-as-map-key.yaml'),
+      accepted: '? a\n: value\n',
+      parsed: { a: 'value' },
+    },
+    'a flow mapping as an explicit block key': {
+      rejected: read('mapping-keys--flow-map-explicit-key.yaml'),
+      accepted: '? a\n: val\n',
+      parsed: { a: 'val' },
+    },
+    'a block sequence as an explicit block key': {
+      rejected: '? - a\n: value\n',
+      accepted: '? -a\n: value\n',
+      parsed: { '-a': 'value' },
+    },
+    'a block sequence after a tab as an explicit block key': {
+      rejected: '? -\ta\n: value\n',
+      accepted: '? -a\n: value\n',
+      parsed: { '-a': 'value' },
+    },
+    'a block mapping as an explicit block key': {
+      rejected: '? ? a\n: value\n',
+      accepted: '? ?a\n: value\n',
+      parsed: { '?a': 'value' },
+    },
+    'a block mapping as an explicit key in a sequence entry': {
+      rejected: '- ? a: value\n',
+      accepted: '- ?a: value\n',
+      parsed: [{ '?a': 'value' }],
+    },
+    'a flow sequence as a block key': {
+      rejected: 'first: 1\n[a, b]: value\n',
+      accepted: 'first: 1\na: value\n',
+      parsed: { first: 1, a: 'value' },
+    },
+    'a flow mapping as a block key': {
+      rejected: 'first: 1\n{a: 1}: value\n',
+      accepted: 'first: 1\na: value\n',
+      parsed: { first: 1, a: 'value' },
+    },
+    'an alias to a sequence as a block key': {
+      rejected: 'anchored: &node [a, b]\n*node : value\n',
+      accepted: 'anchored: &node a\n*node : value\n',
+      parsed: { anchored: 'a', a: 'value' },
+    },
+    'an alias to a mapping as a block key': {
+      rejected: 'anchored: &node {a: 1}\n*node : value\n',
+      accepted: 'anchored: &node a\n*node : value\n',
+      parsed: { anchored: 'a', a: 'value' },
+    },
+    'a flow sequence as a flow key': {
+      rejected: read('mapping-keys--flow-map-seq-key.yaml'),
+      accepted: '{a: val}',
+      parsed: { a: 'val' },
+    },
+    'a flow mapping as a flow key': {
+      rejected: read('mapping-keys--flow-map-map-key.yaml'),
+      accepted: '{a: val}',
+      parsed: { a: 'val' },
+    },
+    'an alias to a sequence as a flow key': {
+      rejected: '{anchored: &node [a, b], *node : value}',
+      accepted: '{anchored: &node a, *node : value}',
+      parsed: { anchored: 'a', a: 'value' },
+    },
+    'a flow sequence as an explicit flow key': {
+      rejected: '{? [a, b] : value}',
+      accepted: '{? a : value}',
+      parsed: { a: 'value' },
+    },
+    'a flow sequence as a pair key in a flow sequence': {
+      rejected: '[[a]: value]',
+      accepted: '[a: value]',
+      parsed: [{ a: 'value' }],
+    },
+    'a flow mapping as a pair key in a flow sequence': {
+      rejected: '[{a: 1}: value]',
+      accepted: '[a: value]',
+      parsed: [{ a: 'value' }],
+    },
+    'an alias to a sequence as a pair key in a flow sequence': {
+      rejected: '[&node [a, b], *node : value]',
+      accepted: '[&node a, *node : value]',
+      parsed: ['a', { a: 'value' }],
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    collectionKeys
+  )) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parse(rejected), { code: 'COLLECTION_KEY' }));
+
+    it(`accepts a scalar in place of ${name}`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+});
+
+describe('A mapping never repeats a key', () => {
+  const repeatedKeys: Record<string, KeyCase> = {
+    'a plain key twice in a block mapping': {
+      rejected: 'a: 1\na: 2\n',
+      accepted: 'a: 1\nb: 2\n',
+      parsed: { a: 1, b: 2 },
+    },
+    'a plain key twice in a flow mapping': {
+      rejected: '{a: 1, a: 2}',
+      accepted: '{a: 1, b: 2}',
+      parsed: { a: 1, b: 2 },
+    },
+    '0x10 and 16 in a block mapping': {
+      rejected: '0x10: a\n16: b\n',
+      accepted: '0x10: a\n17: b\n',
+      parsed: { '16': 'a', '17': 'b' },
+    },
+    '0x10 and 16 in a flow mapping': {
+      rejected: '{0x10: a, 16: b}',
+      accepted: '{0x10: a, 17: b}',
+      parsed: { '16': 'a', '17': 'b' },
+    },
+    '1.0 and "1" in a block mapping': {
+      rejected: '1.0: a\n"1": b\n',
+      accepted: '1.0: a\n"2": b\n',
+      parsed: { '1': 'a', '2': 'b' },
+    },
+    '1.0 and "1" in a flow mapping': {
+      rejected: '{1.0: a, "1": b}',
+      accepted: '{1.0: a, "2": b}',
+      parsed: { '1': 'a', '2': 'b' },
+    },
+    'null and ~ in a block mapping': {
+      rejected: 'null: a\n~: b\n',
+      accepted: 'null: a\nb: b\n',
+      parsed: { '': 'a', b: 'b' },
+    },
+    'null and ~ in a flow mapping': {
+      rejected: '{null: a, ~: b}',
+      accepted: '{null: a, b: b}',
+      parsed: { '': 'a', b: 'b' },
+    },
+    '~ and the empty key in a block mapping': {
+      rejected: '~: a\n"": b\n',
+      accepted: '~: a\n"c": b\n',
+      parsed: { '': 'a', c: 'b' },
+    },
+    '~ and the empty key in a flow mapping': {
+      rejected: '{~: a, "": b}',
+      accepted: '{~: a, "c": b}',
+      parsed: { '': 'a', c: 'b' },
+    },
+    'a key repeated through an alias in a block mapping': {
+      rejected: read('mapping-keys--alias-block-map-key.yaml'),
+      accepted: '&k mykey: val\nother: *k\n',
+      parsed: { mykey: 'val', other: 'mykey' },
+    },
+    'a key repeated through an alias in a flow mapping': {
+      rejected: read('mapping-keys--flow-map-alias-key.yaml'),
+      accepted: '{&k foo: 1, bar: *k}',
+      parsed: { foo: 1, bar: 'foo' },
+    },
+    'an explicit key twice in a block mapping': {
+      rejected: '? a\n: 1\n? a\n: 2\n',
+      accepted: '? a\n: 1\n? b\n: 2\n',
+      parsed: { a: 1, b: 2 },
+    },
+    'an explicit key without a value twice in a block mapping': {
+      rejected: '? a\n? a\n',
+      accepted: '? a\n? b\n',
+      parsed: { a: null, b: null },
+    },
+    'an explicit key twice in a flow mapping': {
+      rejected: '{? a : 1, ? a : 2}',
+      accepted: '{? a : 1, ? b : 2}',
+      parsed: { a: 1, b: 2 },
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    repeatedKeys
+  )) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parse(rejected), SyntaxError));
+
+    it(`accepts ${name} once the second key differs`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+});
+
+describe('A key that reads as the merge key "<<" never merges', () => {
+  const mergedSpellings = {
+    plain: '<<',
+    'with the non-specific tag': '! <<',
+    'tagged !!str without quotes': '!!str <<',
+    'double-quoted': '"<<"',
+    'single-quoted': "'<<'",
+    'with an escape': '"\\x3c<"',
+    'through an alias': '*name ',
+  };
+  const literalSpellings = {
+    'double-quoted and tagged !!str': '!!str "<<"',
+    'single-quoted and tagged !!str': "!!str '<<'",
+    'double-quoted with a verbatim !!str tag': '!<tag:yaml.org,2002:str> "<<"',
+  };
+  const keyForms: Record<string, KeyDocument> = {
+    'a block mapping key': {
+      document: (key) => `anchor: &name <<\n${key}: value\n`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit key': {
+      document: (key) => `anchor: &name <<\n? ${key}\n: value\n`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit key without a value': {
+      document: (key) => `anchor: &name <<\n? ${key}\n`,
+      parsed: { anchor: '<<', '<<': null },
+    },
+    'a flow mapping key': {
+      document: (key) => `{ anchor: &name <<, ${key}: value }`,
+      parsed: { anchor: '<<', '<<': 'value' },
+    },
+    'an explicit pair key in a flow sequence': {
+      document: (key) => `[&name <<, ? ${key} : value]`,
+      parsed: ['<<', { '<<': 'value' }],
+    },
+    'a pair key in a flow sequence': {
+      document: (key) => `[&name <<, ${key}: value]`,
+      parsed: ['<<', { '<<': 'value' }],
+    },
+  };
+  const mergingDocument = read('mapping-keys--merge-key-holding-alias.yaml');
+
+  for (const [form, { document, parsed }] of Object.entries(keyForms)) {
+    for (const [spelling, key] of Object.entries(mergedSpellings)) {
+      it(`rejects "<<" written ${spelling} as ${form}`, () =>
+        strict.throws(() => parse(document(key)), { code: 'MERGE_KEY' }));
+    }
+
+    for (const [spelling, key] of Object.entries(literalSpellings)) {
+      it(`keeps "<<" written ${spelling} as ${form}`, () =>
+        assertParsesTo(document(key), parsed));
+    }
+  }
+
+  it('rejects "<<" holding an aliased mapping', () =>
+    strict.throws(() => parse(mergingDocument), { code: 'MERGE_KEY' }));
+
+  it('keeps !!str "<<" as a literal key holding the aliased mapping', () =>
+    assertParsesTo(mergingDocument.replace('<<', '!!str "<<"'), {
+      defaults: { a: 1, b: 2 },
+      dev: { '<<': { a: 1, b: 2 }, c: 3 },
+    }));
+
+  it('rejects an alias to a quoted !!str "<<" as a key', () =>
+    strict.throws(() => parse('anchor: &name !!str "<<"\n*name : value\n'), {
+      code: 'MERGE_KEY',
+    }));
+
+  it('accepts "<<" as a value', () =>
+    assertParsesTo('a: <<\nb: [<<, {c: <<}]\n', {
+      a: '<<',
+      b: ['<<', { c: '<<' }],
+    }));
+});
+
+describe('A key named after a prototype property is refused unless unsafe keys are allowed', () => {
+  const objectPrototypeMembers = [
+    'constructor',
+    'toString',
+    'toLocaleString',
+    'valueOf',
+    'hasOwnProperty',
+    'isPrototypeOf',
+    'propertyIsEnumerable',
+    '__defineGetter__',
+    '__defineSetter__',
+    '__lookupGetter__',
+    '__lookupSetter__',
+  ];
+  const everyName = ['__proto__', 'prototype', ...objectPrototypeMembers];
+  const everySpelling: Spellings = {
+    plain: (name) => name,
+    'with a tag': (name) => `!!str ${name}`,
+    'double-quoted': (name) => `"${name}"`,
+    'single-quoted': (name) => `'${name}'`,
+    'with an escape': (name) =>
+      `"\\x${name.charCodeAt(0).toString(16)}${name.slice(1)}"`,
+    'through an alias': () => '*name ',
+  };
+  const keyForms: Record<string, KeyForm> = {
+    'a block mapping key': {
+      document: (key, name, value) =>
+        `anchor: &name ${name}\n${key}: ${value}\n`,
+      parsed: (name, value) => ({ anchor: name, [name]: value }),
+    },
+    'an explicit key': {
+      document: (key, name, value) =>
+        `anchor: &name ${name}\n? ${key}\n: ${value}\n`,
+      parsed: (name, value) => ({ anchor: name, [name]: value }),
+    },
+    'a flow mapping key': {
+      document: (key, name, value) =>
+        `{ anchor: &name ${name}, ${key}: ${value} }`,
+      parsed: (name, value) => ({ anchor: name, [name]: value }),
+    },
+    'a flow sequence pair key': {
+      document: (key, name, value) => `[&name ${name}, ${key}: ${value}]`,
+      parsed: (name, value) => [name, { [name]: value }],
+    },
+  };
+  const mapping: HeldValue = {
+    text: '{polluted: true}',
+    parsed: { polluted: true },
+  };
+  const everyValue: Record<string, HeldValue> = {
+    'a scalar': { text: '42', parsed: 42 },
+    'a sequence': { text: '[42]', parsed: [42] },
+    nothing: { text: '', parsed: null },
+    'a mapping': mapping,
+  };
+  const mappingSpellings = {
+    'a block mapping on the next line': 'constructor:\n  polluted: true\n',
+    'a block mapping under an explicit key':
+      '? constructor\n:\n  polluted: true\n',
+    'an alias to a mapping': 'base: &base {a: 1}\nconstructor: *base\n',
+    'an empty tagged mapping': 'constructor: !!map\n',
+  };
+  const repeatedKeyDocuments = {
+    'a block mapping': (name: string) => `${name}: 1\n${name}: 2\n`,
+    'a flow mapping': (name: string) => `{${name}: 1, ${name}: 2}`,
+  };
+  const lookalikeNames = [
+    '__proto',
+    '__PROTO__',
+    '__proto__x',
+    ' __proto__',
+    'Constructor',
+    'constructors',
+    'toString ',
+  ];
+
+  const whilePrototypeMemberIsReadOnly = (
+    name: string,
+    parseDocument: () => unknown
+  ): unknown => {
+    Object.defineProperty(Object.prototype, name, { writable: false });
+
+    try {
+      return parseDocument();
+    } finally {
+      Object.defineProperty(Object.prototype, name, { writable: true });
+    }
+  };
+
+  for (const [form, { document, parsed }] of Object.entries(keyForms)) {
+    for (const [spelling, spell] of Object.entries(everySpelling)) {
+      it(`accepts an ordinary key written ${spelling} as ${form} holding a mapping`, () =>
+        assertParsesTo(
+          document(spell('title'), 'title', mapping.text),
+          parsed('title', mapping.parsed)
+        ));
+
+      for (const name of everyName) {
+        for (const [held, { text }] of Object.entries(everyValue)) {
+          it(`rejects ${name} written ${spelling} as ${form} holding ${held}`, () =>
+            strict.throws(() => parse(document(spell(name), name, text)), {
+              code: 'UNSAFE_KEY',
+            }));
+        }
+      }
+    }
+
+    for (const name of everyName) {
+      for (const [held, value] of Object.entries(everyValue)) {
+        it(`keeps ${name} as an own key of ${form} holding ${held} when unsafe keys are allowed`, () =>
+          strict.deepEqual(
+            parse(document(name, name, value.text), { allowUnsafeKeys: true }),
+            parsed(name, value.parsed)
+          ));
+      }
+    }
+  }
+
+  for (const name of everyName) {
+    for (const [spelling, spell] of Object.entries(everySpelling)) {
+      it(`rejects ${name} written ${spelling} as an explicit key without a value`, () =>
+        strict.throws(
+          () => parse(`anchor: &name ${name}\n? ${spell(name)}\n`),
+          { code: 'UNSAFE_KEY' }
+        ));
+    }
+
+    it(`keeps ${name} as an own explicit key without a value when unsafe keys are allowed`, () =>
+      strict.deepEqual(parse(`? ${name}\n`, { allowUnsafeKeys: true }), {
+        [name]: null,
+      }));
+  }
+
+  for (const [spelling, document] of Object.entries(mappingSpellings)) {
+    it(`rejects constructor holding ${spelling}`, () =>
+      strict.throws(() => parse(document), { code: 'UNSAFE_KEY' }));
+  }
+
+  for (const allowUnsafeKeys of [false, 'true', 1, null]) {
+    it(`rejects __proto__ when allowUnsafeKeys is ${JSON.stringify(allowUnsafeKeys)}`, () =>
+      // @ts-expect-error
+      strict.throws(() => parse('__proto__: 1\n', { allowUnsafeKeys }), {
+        code: 'UNSAFE_KEY',
+      }));
+  }
+
+  for (const name of everyName) {
+    for (const [form, repeat] of Object.entries(repeatedKeyDocuments)) {
+      it(`rejects ${name} twice in ${form} when unsafe keys are allowed`, () =>
+        strict.throws(() => parse(repeat(name), { allowUnsafeKeys: true }), {
+          code: 'DUPLICATE_KEY',
+        }));
+    }
+  }
+
+  for (const name of lookalikeNames) {
+    it(`accepts the lookalike ${JSON.stringify(name)} holding a mapping`, () =>
+      assertParsesTo(`"${name}": {polluted: true}\n`, {
+        [name]: { polluted: true },
+      }));
+  }
+
+  for (const name of objectPrototypeMembers) {
+    it(`keeps ${name} as an own key while Object.prototype.${name} is read-only and unsafe keys are allowed`, () =>
+      strict.deepEqual(
+        whilePrototypeMemberIsReadOnly(name, () =>
+          parse(`${name}: 1\n`, { allowUnsafeKeys: true })
+        ),
+        { [name]: 1 }
+      ));
+  }
+
+  it('rejects a flow mapping sequence key whose text form is __proto__', () =>
+    strict.throws(() => parse('{ [__proto__]: [42] }'), {
+      code: 'COLLECTION_KEY',
+    }));
+
+  it('accepts the same names as values', () =>
+    assertParsesTo('first: __proto__\nrest: [constructor, prototype]\n', {
+      first: '__proto__',
+      rest: ['constructor', 'prototype'],
+    }));
+});
+
+describe('An implicit key ends on the line where it starts', () => {
+  const multilineKeys: Record<string, KeyCase> = {
+    'a double-quoted key': {
+      rejected: '"a\\nb": 1\n"c\n d": 1\n',
+      accepted: '"a\\nb": 1\n? "c\n d"\n: 1\n',
+      parsed: { 'a\nb': 1, 'c d': 1 },
+    },
+    'a single-quoted key': {
+      rejected: "'a\\nb': 1\n'c\n d': 1\n",
+      accepted: "'a\\nb': 1\n? 'c\n d'\n: 1\n",
+      parsed: { 'a\\nb': 1, 'c d': 1 },
+    },
+    'a single-quoted key holding an escaped quote': {
+      rejected: "'it''s\n a': 1\n",
+      accepted: "? 'it''s\n a'\n: 1\n",
+      parsed: { "it's a": 1 },
+    },
+    'a quoted key in a mapping inside nested sequence entries': {
+      rejected: '- - "bar\n     bar": x\n',
+      accepted: '- - "bar bar": x\n',
+      parsed: [[{ 'bar bar': 'x' }]],
+    },
+    'a plain key of a pair in a flow sequence': {
+      rejected: '[ multi\n  line: value ]\n',
+      accepted: '[ multi line: value ]\n',
+      parsed: [{ 'multi line': 'value' }],
+    },
+    'an anchored key of a pair in a flow sequence': {
+      rejected: '[ &a\n  key: value ]\n',
+      accepted: '[ &a key: value ]\n',
+      parsed: [{ key: 'value' }],
+    },
+    'a quoted key of a pair in a flow sequence': {
+      rejected: '[ "multi\n  line": value ]\n',
+      accepted: '[ "multi line": value ]\n',
+      parsed: [{ 'multi line': 'value' }],
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    multilineKeys
+  )) {
+    it(`rejects ${name} that spans lines`, () =>
+      strict.throws(() => parse(rejected), { code: 'EXPECTED_MAPPING_ENTRY' }));
+
+    it(`accepts ${name} written after "?" or on one line`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+
+  it('accepts a flow mapping key that spans lines', () =>
+    assertParsesTo('{ multi\n  line: value }\n', { 'multi line': 'value' }));
+});
+
+describe('An implicit key puts its ":" at most 1,024 characters after its start', () => {
+  const longestKey = 'k'.repeat(1024);
+  const tooLongKey = 'k'.repeat(1025);
+  const keyLengths: Record<string, KeyCase> = {
+    'a block mapping key': {
+      rejected: `${tooLongKey}: value\n`,
+      accepted: `${longestKey}: value\n`,
+      parsed: { [longestKey]: 'value' },
+    },
+    'a block mapping key padded with spaces': {
+      rejected: `${'k'.repeat(1000)}${' '.repeat(25)}: value\n`,
+      accepted: `${'k'.repeat(1000)}${' '.repeat(24)}: value\n`,
+      parsed: { ['k'.repeat(1000)]: 'value' },
+    },
+    'a single-quoted block mapping key holding escaped quotes': {
+      rejected: `'${"''".repeat(511)}k': value\n`,
+      accepted: `'${"''".repeat(511)}': value\n`,
+      parsed: { ["'".repeat(511)]: 'value' },
+    },
+    'a key of a pair in a flow sequence': {
+      rejected: `[${tooLongKey}: value]`,
+      accepted: `[${longestKey}: value]`,
+      parsed: [{ [longestKey]: 'value' }],
+    },
+    'a quoted key of a pair in a flow sequence': {
+      rejected: `["${'k'.repeat(1023)}": value]`,
+      accepted: `["${'k'.repeat(1022)}": value]`,
+      parsed: [{ ['k'.repeat(1022)]: 'value' }],
+    },
+    'an anchored block mapping key': {
+      rejected: `&a ${'k'.repeat(1022)}: value\n`,
+      accepted: `&a ${'k'.repeat(1021)}: value\n`,
+      parsed: { ['k'.repeat(1021)]: 'value' },
+    },
+    'an anchored key of a pair in a flow sequence': {
+      rejected: `[&a ${'k'.repeat(1022)}: value]`,
+      accepted: `[&a ${'k'.repeat(1021)}: value]`,
+      parsed: [{ ['k'.repeat(1021)]: 'value' }],
+    },
+  };
+
+  for (const [name, { rejected, accepted, parsed }] of Object.entries(
+    keyLengths
+  )) {
+    it(`rejects ${name} whose ":" is 1,025 characters after its start`, () =>
+      strict.throws(() => parse(rejected), { code: 'EXPECTED_MAPPING_ENTRY' }));
+
+    it(`accepts ${name} whose ":" is 1,024 characters after its start`, () =>
+      assertParsesTo(accepted, parsed));
+  }
+
+  it('accepts an explicit key of any length', () =>
+    assertParsesTo(`? ${tooLongKey}\n: value\n`, { [tooLongKey]: 'value' }));
+});
