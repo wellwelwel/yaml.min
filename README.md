@@ -12,7 +12,6 @@
 </div>
 
 - Zero runtime dependencies
-- Single-file hand-written recursive-descent parser
 - Compatible with **Node.js** _(18+)_, **Bun**, and **Deno**
 
 ---
@@ -86,11 +85,11 @@ data.database.ports; // [8001, 8002, 8003]
 parse(source, { maxDepth: 256, bigint: false, allowUnsafeKeys: false });
 ```
 
-| Option            | Default | Description                                                                                                                                                                     |
-| ----------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxDepth`        | `256`   | How deep collections can nest, however they are written, counting the levels each alias repeats. Must be an integer from `0` to `400`. See [Untrusted Input](#untrusted-input). |
-| `bigint`          | `false` | Returns integers as `BigInt`. See [Integers](#integers).                                                                                                                        |
-| `allowUnsafeKeys` | `false` | Accepts keys named `__proto__`, `prototype`, or after another `Object.prototype` member as ordinary own keys. See [Untrusted Input](#untrusted-input).                          |
+| Option            | Default | Description                                                                                                                               |
+| ----------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxDepth`        | `256`   | How deep collections can nest, counting the levels aliases repeat. An integer from `0` to `400`. See [Untrusted Input](#untrusted-input). |
+| `bigint`          | `false` | Returns integers as `BigInt`. See [Integers](#integers).                                                                                  |
+| `allowUnsafeKeys` | `false` | Accepts unsafe keys, such as `__proto__`. See [Untrusted Input](#untrusted-input).                                                        |
 
 ---
 
@@ -98,7 +97,7 @@ parse(source, { maxDepth: 256, bigint: false, allowUnsafeKeys: false });
 
 ### Strings
 
-Plain, single-quoted, double-quoted, and all escape sequences:
+Plain, single-quoted, and double-quoted:
 
 ```yaml
 plain: Hello, World!
@@ -147,7 +146,7 @@ octal: 0o755
 
 An integer beyond the range **JavaScript** holds exactly (±9,007,199,254,740,991), such as a 20-digit identifier, stays a string instead of being rounded.
 
-With `bigint: true`, every integer of up to 1,000 digits is returned as an exact `BigInt`, and longer ones stay strings, because converting them costs more than linear time. Floats stay numbers.
+With `bigint: true`, integers of up to 1,000 digits are returned as exact `BigInt` values, and longer ones stay strings. Floats stay numbers.
 
 ### Floats
 
@@ -227,9 +226,9 @@ production:
   connection: *defaults
 ```
 
-An alias returns the value its anchor labels, not a copy. Each mapping or sequence an alias refers to is frozen, along with everything inside it, so it can't be changed through the anchor or any alias. To change one, copy it, for example with `structuredClone`, and change the copy. A `structuredClone` of the whole result keeps its aliased parts shared but no longer frozen. An alias can only refer to a node that is already complete. See [Untrusted Input](#untrusted-input) for how much aliases can repeat.
+An alias returns the anchored value itself, not a copy, so every mapping or sequence an alias refers to is deeply frozen. To change one, change a copy, such as one made with `structuredClone`.
 
-**yaml.min** follows **YAML** 1.2, which has no merge keys, so it never copies the entries of one mapping into another. Parsers that apply the older merge key read `<<: *defaults` as those copied entries. To never read a document differently from them, **yaml.min** rejects a key that reads as `<<`, whether plain, quoted, or through an alias, with `MERGE_KEY`. For a literal `<<` key, write it as a quoted scalar tagged `!!str`, such as `!!str "<<"`, which those parsers also read as text.
+**YAML** 1.2 has no merge keys, so instead of reading `<<: *defaults` differently from parsers that still merge it, **yaml.min** rejects any key that reads as `<<` with `MERGE_KEY`. For a literal `<<` key, write `!!str "<<"`.
 
 ### Explicit Keys
 
@@ -247,11 +246,11 @@ zip: !!str 01234 # "01234"
 limit: !!int '5' # 5
 ```
 
-`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` are honored, including through `%TAG` handles and verbatim tags such as `!<tag:yaml.org,2002:str>`. Any other tag, such as `!!binary`, `!!timestamp`, or `!custom`, is rejected with `UNKNOWN_TAG`, and a value that does not fit its tag, such as `!!int "five"`, with `TAG_MISMATCH`.
+`!!str`, `!!int`, `!!float`, `!!bool`, `!!null`, `!!seq`, `!!map`, and the non-specific `!` are supported, including through `%TAG` handles and verbatim tags such as `!<tag:yaml.org,2002:str>`. Any other tag, such as `!!binary` or `!custom`, is rejected.
 
 ### Document Markers
 
-`parse` reads a single document and rejects a stream that holds more than one. Use `parseAll` to read every document in order:
+`parse` reads a single document. Use `parseAll` for a stream of documents:
 
 ```ts
 import { parseAll } from 'yaml.min';
@@ -283,57 +282,56 @@ try {
 }
 ```
 
-- `message` is plain language and can change in any release, so match on `code` to tell errors apart or to write your own messages.
-- Messages are at most 300 characters, and any key, anchor, or tag they quote is cut to 40 characters (marked with `…`). Quoted text escapes `"` and `\`, and shows control, invisible, and bidirectional characters as code points such as `[U+202E]`. Scalar values are never quoted.
+- Match on `code`, not `message`, which can change in any release.
+- Messages are short and safe to display: they never quote scalar values, and they show control, invisible, and bidirectional characters as code points, such as `[U+202E]`.
 - A source that is not a string, or an invalid option, throws a `TypeError` instead.
 
 ### Error Codes
 
-| Code                           | Meaning                                                                                                                                      |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ALIAS_EXPANSION_TOO_LARGE`    | Aliases repeat more content than the input allows. See [Untrusted Input](#untrusted-input).                                                  |
-| `COLLECTION_KEY`               | A mapping key is a sequence or a mapping.                                                                                                    |
-| `DUPLICATE_ANCHOR`             | A node carries more than one anchor.                                                                                                         |
-| `DUPLICATE_KEY`                | A key appears more than once in a mapping, including keys that share a text form, such as `0x10` and `16`.                                   |
-| `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                            |
-| `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                          |
-| `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                   |
-| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or puts its `:` over 1,024 characters after its start. |
-| `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                 |
-| `INVALID_ANCHOR`               | An anchor labels a sequence that starts on its line.                                                                                         |
-| `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                 |
-| `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                  |
-| `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                   |
-| `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                   |
-| `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                            |
-| `MERGE_KEY`                    | A key reads as the merge key `<<` and is not a quoted scalar tagged `!!str`. See [Anchors and Aliases](#anchors-and-aliases).                |
-| `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                        |
-| `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`, counting the levels aliases repeat.                                                                 |
-| `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                   |
-| `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                             |
-| `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                            |
-| `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.            |
-| `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                         |
-| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection, or a byte order mark outside quotes starts a line inside a document.  |
-| `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                             |
-| `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                          |
-| `UNSAFE_KEY`                   | A key is named `__proto__`, `prototype`, or after another `Object.prototype` member. See [Untrusted Input](#untrusted-input).                |
-| `UNTERMINATED_FLOW_COLLECTION` | A flow sequence or mapping is never closed.                                                                                                  |
-| `UNTERMINATED_STRING`          | A quoted scalar is never closed.                                                                                                             |
+| Code                           | Meaning                                                                                                                                     |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ALIAS_EXPANSION_TOO_LARGE`    | Aliases repeat more content than the input allows. See [Untrusted Input](#untrusted-input).                                                 |
+| `COLLECTION_KEY`               | A mapping key is a sequence or a mapping.                                                                                                   |
+| `DUPLICATE_ANCHOR`             | A node carries more than one anchor.                                                                                                        |
+| `DUPLICATE_KEY`                | A key appears more than once in a mapping, including keys that become the same property, such as `0x10` and `16`.                           |
+| `DUPLICATE_TAG`                | A node carries more than one tag.                                                                                                           |
+| `DUPLICATE_TAG_HANDLE`         | A `%TAG` directive declares a handle the document already declared.                                                                         |
+| `ENGINE_LIMIT`                 | Parsing exhausted an engine limit, such as the call stack.                                                                                  |
+| `EXPECTED_MAPPING_ENTRY`       | A line in a block mapping is not a `key: value` entry, or an implicit key spans lines or runs over 1,024 characters.                        |
+| `INVALID_ALIAS`                | An alias has no anchor name after `*`, or carries an anchor.                                                                                |
+| `INVALID_ANCHOR`               | An anchor labels a sequence that starts on its line.                                                                                        |
+| `INVALID_BLOCK_SCALAR_HEADER`  | A block scalar header repeats an indicator or holds an unexpected character.                                                                |
+| `INVALID_DIRECTIVE`            | A `%YAML` or `%TAG` directive is malformed, a document has two `%YAML` directives, or directives are not followed by `---`.                 |
+| `INVALID_ESCAPE`               | An escape sequence is unknown, incomplete, or names an invalid code point.                                                                  |
+| `INVALID_INDENTATION`          | A line is indented with a tab, or by an amount no open collection expects.                                                                  |
+| `INVALID_TAG`                  | A tag is malformed, runs into its node, or labels an alias or a sequence that starts on its line.                                           |
+| `MERGE_KEY`                    | A key reads as the merge key `<<` and is not a quoted scalar tagged `!!str`. See [Anchors and Aliases](#anchors-and-aliases).               |
+| `MULTIPLE_DOCUMENTS`           | `parse` received more than one document. Use `parseAll` for a stream.                                                                       |
+| `NESTING_TOO_DEEP`             | Collections nest deeper than `maxDepth`.                                                                                                    |
+| `NON_PRINTABLE_CHARACTER`      | The input holds a control character, a lone surrogate, or another non-printable character.                                                  |
+| `TAG_MISMATCH`                 | A tag labels a value that does not fit it, such as `!!int five`.                                                                            |
+| `UNDECLARED_TAG_HANDLE`        | A tag uses a handle no `%TAG` directive declares.                                                                                           |
+| `UNEXPECTED_CHARACTER`         | A plain scalar starts with an indicator, a `#` touches the content before it, or a flow collection holds an unexpected character.           |
+| `UNEXPECTED_CONTENT`           | Content appears after a complete value, after the end of a document, or after `...`.                                                        |
+| `UNEXPECTED_DOCUMENT_MARKER`   | A `---` or `...` line interrupts a quoted scalar or a flow collection, or a byte order mark outside quotes starts a line inside a document. |
+| `UNKNOWN_ANCHOR`               | An alias names no anchor completed earlier in the same document.                                                                            |
+| `UNKNOWN_TAG`                  | A tag is not a core schema tag, such as `!!binary`.                                                                                         |
+| `UNSAFE_KEY`                   | A key is named `__proto__`, `prototype`, or after another `Object.prototype` member. See [Untrusted Input](#untrusted-input).               |
+| `UNTERMINATED_FLOW_COLLECTION` | A flow sequence or mapping is never closed.                                                                                                 |
+| `UNTERMINATED_STRING`          | A quoted scalar is never closed.                                                                                                            |
 
 ---
 
 ## Untrusted Input
 
-- `maxDepth` stops a hostile document from exhausting the call stack, in the parser or in your code that walks the result. An alias counts the levels of the node it repeats, so the result never nests deeper than the limit, even when every node in the document stays within it. Its ceiling of `400` stays below the shallowest overflow measured (about 750 nested block mappings on **Node.js** 22).
-- The content that aliases repeat adds up to at most the larger of 1,000,000 characters and 10 times the length of the input, so a handful of nested aliases can't turn into gigabytes once the result is walked or serialized.
-- Neither `parse` nor `parseAll` limits input size, and their work grows linearly with it, so cap the size of untrusted input before parsing.
-- Results are ordinary objects, and every key lands as an own property, so parsing never changes a prototype. Keys named `__proto__`, `prototype`, or after any other `Object.prototype` member (such as `constructor`, `toString`, or `hasOwnProperty`) are refused, because they would hide built-in members of the result, and copying it with `Object.assign` or a deep merge can turn them into prototype changes or rewrite built-ins. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
-- A deep merge that descends into functions or arrays already in its target can still reach built-ins through other names, such as `call` on a function or `slice` on an array. Merge results only with code that never descends into functions or inherited properties.
-- Check for a key with `Object.hasOwn`, since `in` also finds the members every object inherits.
-- Double-quoted scalars can hold control characters through escapes such as `\e` and `\0` (NUL), and any scalar can hold bidirectional marks such as U+202E even when written raw. Escape or strip both before writing parsed values to a terminal or log or passing them as command arguments, and reject NUL before passing a value to code that treats it as the end of a string.
-- Keys are compared without Unicode normalization, so lookalike keys, such as one with a zero-width space or a decomposed accent, stay distinct. When reviewing files from untrusted authors, flag invisible or decomposed characters in keys.
-- Error messages are short and safe to display. See [Error Handling](#error-handling).
+- `maxDepth` keeps a hostile document from exhausting the call stack, in the parser or in your code that walks the result.
+- In total, aliases repeat at most the larger of 1,000,000 characters and 10 times the input length, so a few nested aliases can't expand into gigabytes.
+- Input size is not limited, and parsing time grows linearly with it, so cap the size of untrusted input before parsing.
+- Every key lands as an own property, so parsing never changes a prototype. Keys named `__proto__`, `prototype`, or after another `Object.prototype` member, such as `constructor` or `toString`, are rejected, since they shadow built-in members and copying the result with `Object.assign` or a deep merge can turn them into prototype pollution. With `allowUnsafeKeys`, copy results with spread (`{ ...result }`) and merge them only with code that skips these keys.
+- Merge results only with code that never descends into functions or inherited properties, or keys such as `call` and `slice` can overwrite built-ins in the target.
+- Check for a key with `Object.hasOwn`, not `in`, which also finds inherited members.
+- Values can hold control characters through escapes such as `\e` and `\0` (NUL), and bidirectional marks such as U+202E. Escape or strip them before writing values to a terminal or log or passing them as command arguments, and reject NUL where code treats it as the end of a string.
+- Keys are not Unicode-normalized, so lookalike keys, such as one with a zero-width space or a decomposed accent, stay distinct. Flag them when reviewing files from untrusted authors.
 
 ---
 
@@ -378,7 +376,7 @@ config.database.port; // number
 
 ## Benchmark
 
-Measured with [**hyperfine**](https://github.com/sharkdp/hyperfine) parsing the same **YAML** payload:
+Parsing the same **YAML** snapshot 5,000 times per run, with 5 warmup runs and 10 measured runs via [**hyperfine**](https://github.com/sharkdp/hyperfine):
 
 | Parser                                       | Times slower than **yaml.min** | Package Size                                           |
 | -------------------------------------------- | ------------------------------ | ------------------------------------------------------ |
@@ -386,7 +384,7 @@ Measured with [**hyperfine**](https://github.com/sharkdp/hyperfine) parsing the 
 | [js-yaml](https://github.com/nodeca/js-yaml) | 2.05x ↓                        | <img src="https://pkg-size.dev/badge/install/103432">  |
 | [yaml](https://github.com/eemeli/yaml)       | 19.82x ↓                       | <img src="https://pkg-size.dev/badge/install/557819" > |
 
-- Each benchmark parses the same **YAML** snapshot **5,000 times** per run, with **10 measured runs** and **5 warmup runs** via [**hyperfine**](https://github.com/sharkdp/hyperfine). See the [**benchmark**](https://github.com/wellwelwel/yaml.min/tree/main/benchmark) directory for details.
+See the [**benchmark**](https://github.com/wellwelwel/yaml.min/tree/main/benchmark) directory for details.
 
 ---
 
@@ -407,7 +405,7 @@ See the [**Contributing Guide**](https://github.com/wellwelwel/yaml.min/blob/mai
 ## Acknowledgements
 
 - [![Contributors](https://img.shields.io/github/contributors/wellwelwel/yaml.min?label=Contributors)](https://github.com/wellwelwel/yaml.min/graphs/contributors)
-- **yaml.min** is inspired by [**js-yaml**](https://github.com/nodeca/js-yaml), reimplemented as a hand-written recursive-descent parser for performance and zero dependencies.
+- **yaml.min** is inspired by [**js-yaml**](https://github.com/nodeca/js-yaml).
 
 ---
 
