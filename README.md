@@ -406,7 +406,7 @@ See the [**Contributing Guide**](https://github.com/wellwelwel/yaml.min/blob/mai
 ## Acknowledgements
 
 - [![Contributors](https://img.shields.io/github/contributors/wellwelwel/yaml.min?label=Contributors)](https://github.com/wellwelwel/yaml.min/graphs/contributors)
-- Many compatibility tests are inspired by [**js-yaml**](https://github.com/nodeca/js-yaml). Any file that adapts code or tests from another project credits it.
+- Many compatibility tests are inspired or derived by [**yaml**](https://github.com/eemeli/yaml) and [**js-yaml**](https://github.com/nodeca/js-yaml).
 
 ---
 
