@@ -28,10 +28,28 @@ const secondTagError = (
     position
   );
 
+const readDeclaredAnchorName = (state: ParserState): string => {
+  const indicatorPosition = state.position;
+
+  state.position++;
+
+  const name = readAnchorName(state);
+
+  if (name === '')
+    throw yamlError(
+      state,
+      'INVALID_ANCHOR',
+      'An anchor has no name: expected an anchor name right after "&"',
+      indicatorPosition
+    );
+
+  return name;
+};
+
 const readDeclaredNodeProperties = (
   state: ParserState,
   inFlow: boolean
-): NodeProperties | undefined => {
+): NodeProperties => {
   let anchorName: string | undefined;
   let tag: NodeTag | undefined;
 
@@ -52,14 +70,12 @@ const readDeclaredNodeProperties = (
 
     if (anchorName !== undefined) throw secondAnchorError(state, anchorName);
 
-    state.position++;
-    anchorName = readAnchorName(state);
+    anchorName = readDeclaredAnchorName(state);
   }
 
-  if (!anchorName && tag === undefined) return undefined;
-
   return {
-    anchor: anchorName ? declareAnchor(state, anchorName) : undefined,
+    anchor:
+      anchorName === undefined ? undefined : declareAnchor(state, anchorName),
     tag,
   };
 };

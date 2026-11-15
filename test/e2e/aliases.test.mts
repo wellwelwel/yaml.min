@@ -250,6 +250,87 @@ describe('An anchor or alias name runs until whitespace or a flow indicator', ()
   }
 });
 
+describe('An anchor has a name right after its "&"', () => {
+  const unnamedAnchors = {
+    'before a block mapping value': 'a: & b\n',
+    'as a block mapping value that ends the input': 'a: &',
+    'on the line above a block mapping value': 'a: &\n  b\n',
+    'before a block mapping key': '& a: 1\n',
+    'before a block sequence item': '- & x\n',
+    'as an empty block sequence item': '- &\n- x\n',
+    'before a sequence that starts on its line': '- & - x\n',
+    'before an explicit key': '? & k\n: v\n',
+    'before an explicit value': '? k\n: & v\n',
+    'before the root node': '& x\n',
+    'after a "---" marker': '--- & x\n',
+    'before a flow sequence item': '[& x]',
+    'as an empty flow sequence item': '[&, b]\n',
+    'on the line above a flow sequence item': '[&\n x]',
+    'before a flow mapping key': '{& : 1}\n',
+    'before a flow mapping value': '{a: & 1}',
+    'that touches a flow sequence': 'a: &[b]\n',
+    'that touches a flow mapping': 'a: &{b: c}\n',
+    'before a tag': 'a: & !!str b\n',
+    'after a tag': 'a: !!str & b\n',
+    'before a named anchor': 'a: & &x b\n',
+    'on the line below a named anchor': 'a: &x\n  &\n  b\n',
+    'before an alias': 'a: &x 1\nb: & *x\n',
+    'before a tab': 'a: &\tb\n',
+    'before a comment': 'a: & # note\n',
+    'before a CRLF': 'a: &\r\nb: 1\r\n',
+    'before a bare CR': 'a: &\rb: 1\r',
+  };
+  const namedAnchors = {
+    'named with one character': {
+      input: 'a: &x b\nc: *x\n',
+      expected: { a: 'b', c: 'b' },
+    },
+    'named "&"': {
+      input: 'a: && b\nc: *&\n',
+      expected: { a: 'b', c: 'b' },
+    },
+    'named ":" before a flow mapping key': {
+      input: '{&: a: 1, b: *:}',
+      expected: { a: 1, b: 'a' },
+    },
+  };
+  const ampersandsInText = {
+    'inside a plain scalar': { input: 'a: b & c\n', expected: { a: 'b & c' } },
+    'at the end of a plain scalar': {
+      input: '- R&D\n- b &\n',
+      expected: ['R&D', 'b &'],
+    },
+    'at the start of a quoted scalar': {
+      input: 'a: "& b"\n',
+      expected: { a: '& b' },
+    },
+    'at the start of a block scalar': {
+      input: 'a: |\n  & b\n',
+      expected: { a: '& b\n' },
+    },
+  };
+
+  for (const [name, input] of Object.entries(unnamedAnchors)) {
+    it(`rejects an anchor without a name ${name}`, () =>
+      strict.throws(() => parse(input), { code: 'INVALID_ANCHOR' }));
+  }
+
+  it('points at the "&" of an anchor without a name', () =>
+    strict.throws(() => parse('a: 1\nb: !!str & c\n'), {
+      code: 'INVALID_ANCHOR',
+      line: 2,
+      column: 10,
+    }));
+
+  for (const [name, { input, expected }] of Object.entries(namedAnchors)) {
+    it(`keeps an anchor ${name}`, () => assertParsesTo(input, expected));
+  }
+
+  for (const [name, { input, expected }] of Object.entries(ampersandsInText)) {
+    it(`reads an "&" ${name} as text`, () => assertParsesTo(input, expected));
+  }
+});
+
 describe('An alias carries no anchor', () => {
   const anchoredAliases = {
     'as a block mapping value': 'key1: &a value\nkey2: &b *a\n',

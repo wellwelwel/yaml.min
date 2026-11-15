@@ -339,6 +339,127 @@ describe('A sequence entry holds any node on its line or the lines below', () =>
   }
 });
 
+describe('A value on the line below its "-" or ":" is followed only by a comment', () => {
+  const contentAfterValues = {
+    'a sequence entry after a double-quoted scalar':
+      'key:\n -\n  "quoted" - x\n',
+    'a sequence entry after a single-quoted scalar':
+      "key:\n -\n  'quoted' - x\n",
+    'a sequence entry after a flow sequence': 'key:\n -\n  [a, b] - x\n',
+    'a sequence entry after a flow mapping': 'key:\n -\n  {a: b} - x\n',
+    'a sequence entry after an alias': 'k: &a 1\nkey:\n -\n  *a - x\n',
+    'a sequence entry two spaces after a value in a sequence indented by two':
+      'key:\n  -\n    "q"  - x\n',
+    'a sequence entry that touches a value in a top-level sequence':
+      '-\n "q"- x\n',
+    'a sequence entry that touches a value in a sequence at the indentation of its key':
+      'k:\n-\n "q"- x\n',
+    'a sequence entry that touches a value in a nested sequence':
+      '-\n  -\n    "q"- x\n',
+    'an empty sequence entry that touches a value': '-\n "q"-\n',
+    'a sequence entry after a value below its tag': '- !!str\n "q"- x\n',
+    'a sequence entry after a value below its anchor': '- &a\n "q"- x\n',
+    'a sequence entry after a quoted scalar that spans lines':
+      '-\n "a\n  b"- x\n',
+    'a sequence entry after a flow sequence that spans lines':
+      '-\n [a,\n  b]- x\n',
+    'a sequence entry after a value and a tab': '-\n "q"\t- x\n',
+    'text after a value in a sequence': '-\n "quoted" junk\n',
+    'a second value after a value in a sequence': '-\n [a] [b]\n',
+    'a sequence entry after a value, with CRLF':
+      'key:\r\n -\r\n  "quoted" - x\r\n',
+    'a sequence entry after a value, with bare CR':
+      'key:\r -\r  "quoted" - x\r',
+    'text after a mapping value': 'a:\n  "q" junk\n',
+    'a sequence entry after an explicit value': '? a\n:\n  "q" - x\n',
+    'text after an explicit value': '? a\n:\n  "q" junk\n',
+  };
+  const valuesBelowIndicators = {
+    'a comment after a double-quoted scalar': {
+      input: 'key:\n -\n  "quoted" # note\n - x\n',
+      expected: { key: ['quoted', 'x'] },
+    },
+    'spaces after a single-quoted scalar': {
+      input: "-\n 'q'  \n- x\n",
+      expected: ['q', 'x'],
+    },
+    'a tab and a comment after a flow sequence': {
+      input: '-\n [a, b]\t# note\n- x\n',
+      expected: [['a', 'b'], 'x'],
+    },
+    'a flow mapping that ends its line': {
+      input: '-\n {a: b}\n- x\n',
+      expected: [{ a: 'b' }, 'x'],
+    },
+    'a comment after an alias': {
+      input: '- &a 1\n-\n *a # note\n- x\n',
+      expected: [1, 1, 'x'],
+    },
+    'a quoted scalar that spans lines': {
+      input: '-\n "a\n  b"\n- x\n',
+      expected: ['a b', 'x'],
+    },
+    'a flow sequence that spans lines': {
+      input: '-\n [a,\n  b] # note\n- x\n',
+      expected: [['a', 'b'], 'x'],
+    },
+    'a plain scalar that holds a dash': {
+      input: '-\n plain - x\n- y\n',
+      expected: ['plain - x', 'y'],
+    },
+    'a block scalar': {
+      input: '-\n |\n  text\n- x\n',
+      expected: ['text\n', 'x'],
+    },
+    'a block sequence': {
+      input: '-\n  - a\n  - b\n- x\n',
+      expected: [['a', 'b'], 'x'],
+    },
+    'a block mapping whose first key is quoted': {
+      input: '-\n "a": 1\n b: 2\n- x\n',
+      expected: [{ a: 1, b: 2 }, 'x'],
+    },
+    'a block sequence in a nested sequence': {
+      input: '-\n  -\n    - a\n  - b\n- x\n',
+      expected: [[['a'], 'b'], 'x'],
+    },
+    'a comment after a value, with CRLF': {
+      input: 'key:\r\n -\r\n  "quoted" # note\r\n - x\r\n',
+      expected: { key: ['quoted', 'x'] },
+    },
+    'a value that ends its line, with bare CR': {
+      input: 'key:\r -\r  "quoted"\r - x\r',
+      expected: { key: ['quoted', 'x'] },
+    },
+    'a comment after an explicit value': {
+      input: '? a\n:\n  "q" # note\nb: 1\n',
+      expected: { a: 'q', b: 1 },
+    },
+    'a block sequence as an explicit value': {
+      input: '? a\n:\n  - x\n  - y\nb: 1\n',
+      expected: { a: ['x', 'y'], b: 1 },
+    },
+  };
+
+  for (const [name, input] of Object.entries(contentAfterValues)) {
+    it(`rejects ${name}`, () =>
+      strict.throws(() => parse(input), { code: 'UNEXPECTED_CONTENT' }));
+  }
+
+  it('points at the content that follows the value', () =>
+    strict.throws(() => parse('key:\n -\n  "quoted" - x\n'), {
+      code: 'UNEXPECTED_CONTENT',
+      line: 3,
+      column: 12,
+    }));
+
+  for (const [name, { input, expected }] of Object.entries(
+    valuesBelowIndicators
+  )) {
+    it(`reads ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
 describe('Malformed block structure is rejected instead of dropped', () => {
   const malformedBlocks = {
     'a line that is not a mapping entry':

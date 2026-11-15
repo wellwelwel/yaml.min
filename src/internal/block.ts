@@ -184,20 +184,13 @@ const parseIndicatedNode = (
 
   skipComment(state);
 
-  if (isAtLineBreakOrEnd(state))
-    return withAnchor(
-      state,
-      properties?.anchor,
-      parseNextLineValue(state, indent, allowsIndentlessSequence, properties)
-    );
-
-  const value = parseInlineValue(
-    state,
-    indent,
-    indicatorStart,
-    contentStart,
-    properties
-  );
+  const value = isAtLineBreakOrEnd(state)
+    ? withAnchor(
+        state,
+        properties?.anchor,
+        parseNextLineValue(state, indent, allowsIndentlessSequence, properties)
+      )
+    : parseInlineValue(state, indent, indicatorStart, contentStart, properties);
 
   finishLine(state);
 
@@ -358,7 +351,6 @@ const parseExplicitMapEntry = (
       keyStart,
       parseIndicatedNode(state, indent, true)
     );
-    finishLine(state);
 
     return;
   }
