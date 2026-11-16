@@ -50,6 +50,23 @@ describe('A document without content is null', () => {
   }
 });
 
+describe('Spaces that end the input without a line break are not content', () => {
+  const trailingSpaces = {
+    'a mapping entry': { input: 'a: 1\n   ', expected: { a: 1 } },
+    'a nested mapping entry': {
+      input: 'a:\n  b: 1\n  ',
+      expected: { a: { b: 1 } },
+    },
+    'a key without a value': { input: 'a:\n  ', expected: { a: null } },
+    'a sequence entry': { input: '- a\n  ', expected: ['a'] },
+    'no content at all': { input: '   ', expected: null },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(trailingSpaces)) {
+    it(`ignores them after ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
 describe('An end marker line holds nothing but the marker and a comment', () => {
   it('rejects text after an end marker on the same line', () =>
     strict.throws(

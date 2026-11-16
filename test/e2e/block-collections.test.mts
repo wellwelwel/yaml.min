@@ -478,6 +478,9 @@ describe('Malformed block structure is rejected instead of dropped', () => {
     'a line indented under a scalar value after a comment':
       'k: first\n  # comment\n  second\n',
     'an explicit key followed by an unexpected line': '? a\n   junk: 1\nb: 2\n',
+    'a sequence entry among the entries of a mapping': 'a: 1\n- b\n',
+    'a sequence entry among the entries of a nested mapping':
+      'a:\n  b: 1\n  - c\n',
     'a mapping nested inside a value by a colon and a tab': read(
       'block-collections--colon-tab-splits.yaml'
     ),

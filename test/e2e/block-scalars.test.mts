@@ -8,6 +8,7 @@ import { describe, it, strict } from 'poku';
 import {
   assertParsesTo,
   parse,
+  parseAll,
   parseWithinTimeLimit,
   read,
 } from '../__helpers__/index.mts';
@@ -230,10 +231,39 @@ describe('Chomping counts the line breaks a block scalar really ends with', () =
       'a: |2\n\nb: 1\n',
       { a: '', b: 1 },
     ],
+    'keep on an empty block followed by the next entry': [
+      'a: |+\n\nb: 1\n',
+      { a: '\n', b: 1 },
+    ],
+    'keep on an empty block whose only line of spaces ends the input': [
+      'a: |+\n   ',
+      { a: '\n' },
+    ],
+    'clip on an empty block whose only line of spaces ends the input': [
+      'a: |\n   ',
+      { a: '' },
+    ],
   };
 
   for (const [name, [input, expected]] of Object.entries(chompedScalars)) {
     it(`applies ${name}`, () => assertParsesTo(input, expected));
+  }
+});
+
+describe('A document marker ends a block scalar that holds no content', () => {
+  const emptyScalars: Record<string, [string, unknown[]]> = {
+    'an end marker right below the header': ['--- |\n...\n', ['']],
+    'an end marker below a line of spaces': ['--- |\n  \n...\n', ['']],
+    'an end marker below a line of spaces under keep': [
+      '--- |+\n  \n...\n',
+      ['\n'],
+    ],
+    'a start marker below a line of spaces': ['--- >\n  \n--- a\n', ['', 'a']],
+  };
+
+  for (const [name, [input, expected]] of Object.entries(emptyScalars)) {
+    it(`ends the scalar at ${name}`, () =>
+      strict.deepEqual(parseAll(input), expected));
   }
 });
 

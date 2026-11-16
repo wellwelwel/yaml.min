@@ -191,15 +191,57 @@ describe('A ":" followed by a tab or a line break separates a flow key from its 
   }
 });
 
+describe('A ":" that opens a line belongs to the flow mapping key on the line above', () => {
+  const keysAboveColons = {
+    'a value': { input: '{a\n : b}', expected: { a: 'b' } },
+    'a "}"': { input: '{a\n :}', expected: { a: null } },
+    'a ","': { input: '{a\n :, b: 1}', expected: { a: null, b: 1 } },
+    'a "," in a flow mapping held by a block mapping': {
+      input: 'x:\n  {a\n   :, b: 1}',
+      expected: { x: { a: null, b: 1 } },
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(keysAboveColons)) {
+    it(`reads the key whose ":" is followed by ${name}`, () =>
+      assertParsesTo(input, expected));
+  }
+});
+
 describe('A flow collection line is indented past the block collection that holds it', () => {
   const unindentedLines = {
     'an entry line after a ","': 'key: [a,\nb]\n',
     'a value line after a ":"': 'x:\n  {a:\nb}',
+    'a line that continues a plain item': 'key: [a\nb]\n',
+    'a line that continues a plain value': 'key: {a: x\ny}\n',
   };
 
   for (const [name, input] of Object.entries(unindentedLines)) {
     it(`rejects ${name} at the indentation of the block collection`, () =>
       strict.throws(() => parse(input), { code: 'INVALID_INDENTATION' }));
+  }
+});
+
+describe('A flow collection may close at the indentation of the block collection that holds it', () => {
+  const closingLines = {
+    'a "]" below a plain item': {
+      input: 'key: [a\n]\n',
+      expected: { key: ['a'] },
+    },
+    'a "]" below a ","': { input: 'key: [a,\n]\n', expected: { key: ['a'] } },
+    'a "}" below a plain value': {
+      input: 'key: {a: b\n}\n',
+      expected: { key: { a: 'b' } },
+    },
+    'a "]" below a plain item of a sequence entry': {
+      input: '- [a\n]\n',
+      expected: [['a']],
+    },
+  };
+
+  for (const [name, { input, expected }] of Object.entries(closingLines)) {
+    it(`reads the collection closed by ${name}`, () =>
+      assertParsesTo(input, expected));
   }
 });
 

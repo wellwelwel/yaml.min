@@ -257,3 +257,26 @@ describe('A tag outside the core schema, or a value that does not fit its tag, i
     it(`rejects ${name}`, () => strict.throws(() => parse(input), SyntaxError));
   }
 });
+
+describe('A tag that is not well formed is told apart from a tag outside the core schema', () => {
+  const tagCodes: Record<string, [string, string]> = {
+    'an empty verbatim tag': ['value: !<> x\n', 'INVALID_TAG'],
+    'a verbatim tag holding a character no tag may hold': [
+      'value: !<tag:yaml.org,2002:s^tr> x\n',
+      'INVALID_TAG',
+    ],
+    'a percent-encoded tag that does not decode as UTF-8': [
+      'value: !!%FF x\n',
+      'INVALID_TAG',
+    ],
+    'a percent-encoded tag that decodes to a name outside the core schema': [
+      'value: !!%C3%A9 x\n',
+      'UNKNOWN_TAG',
+    ],
+  };
+
+  for (const [name, [input, code]] of Object.entries(tagCodes)) {
+    it(`reports ${name} as ${code}`, () =>
+      strict.throws(() => parse(input), { code }));
+  }
+});
