@@ -21,8 +21,9 @@ const NOT_DIGITS = -1;
 
 export const MAX_BIG_INTEGER_DIGITS = 1000;
 
-const FLOAT_NUMERAL = /^[-+]?(\.[0-9]+|[0-9]+(\.[0-9]*)?)([eE][-+]?[0-9]+)?$/;
-const INFINITY_NUMERAL = /^[+-]?\.(inf|Inf|INF)$/;
+const FLOAT_NUMERAL =
+  /^[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?$/;
+const INFINITY_NUMERAL = /^[+-]?\.(?:inf|Inf|INF)$/;
 
 const digitsValue = (raw: string, start: number, radix: number): number => {
   if (start >= raw.length) return NOT_DIGITS;

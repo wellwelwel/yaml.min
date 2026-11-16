@@ -27,6 +27,9 @@ const messageOf = (input: string): string => {
 
 const duplicated = (key: string): string => `${key}: 1\n${key}: 2\n`;
 
+const alphabetically = (left: string, right: string): number =>
+  left.localeCompare(right);
+
 describe('Errors carry a stable code and the line and column of the problem', () => {
   const codeCases: Record<Exclude<YamlErrorCode, 'ENGINE_LIMIT'>, CodeCase> = {
     ALIAS_EXPANSION_TOO_LARGE: {
@@ -92,12 +95,12 @@ describe('Errors carry a stable code and the line and column of the problem', ()
 
   it('documents exactly the codes the parser reports', () => {
     const documented = [
-      ...readFileSync(README, 'utf8').matchAll(/^\| `([A-Z_]+)` +\|/gm),
-    ].map((match) => match[1]);
+      ...readFileSync(README, 'utf8').matchAll(/^\| `(?<code>[A-Z_]+)` +\|/gm),
+    ].map((match) => match.groups!.code);
 
     strict.deepEqual(
-      documented.sort(),
-      [...Object.keys(codeCases), 'ENGINE_LIMIT'].sort()
+      documented.sort(alphabetically),
+      [...Object.keys(codeCases), 'ENGINE_LIMIT'].sort(alphabetically)
     );
   });
 });

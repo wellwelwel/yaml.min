@@ -122,7 +122,7 @@ const stringifyKey = (
   if (typeof key === 'object' && key !== null)
     throw collectionKeyError(state, keyStart);
 
-  return key == null ? '' : String(key);
+  return String(key ?? '');
 };
 
 const definePrototypeKey = (

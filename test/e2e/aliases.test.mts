@@ -385,7 +385,7 @@ describe('An alias returns the anchored value itself, not a copy', () => {
 
   for (const [name, input] of Object.entries(sharedValues)) {
     it(`shares ${name}`, () => {
-      const [original, copy] = Object.values(parse(input) as object);
+      const [original, copy] = Object.values(parse<object>(input));
 
       strict.equal(copy, original);
     });
@@ -410,7 +410,7 @@ describe('A collection an alias refers to can no longer change', () => {
 
   for (const [name, change] of Object.entries(changes)) {
     it(`rejects a change to ${name}`, () => {
-      const config = parse(SHARED_CONFIG_DOCUMENT) as SharedConfig;
+      const config = parse<SharedConfig>(SHARED_CONFIG_DOCUMENT);
 
       strict.throws(() => change(config), TypeError);
       strict.deepEqual(config, {
@@ -421,24 +421,23 @@ describe('A collection an alias refers to can no longer change', () => {
   }
 
   it('rejects a change to a collection held under a key named after a built-in member', () => {
-    const config = parse(
+    const config = parse<{ production: { constructor: string[] } }>(
       'defaults: &defaults\n  constructor: [a.example]\nproduction: *defaults\n',
       { allowUnsafeKeys: true }
-    ) as { production: { constructor: string[] } };
-
-    strict.throws(
-      () => config.production.constructor.push('localhost'),
-      TypeError
     );
+
+    strict.throws(() => {
+      config.production.constructor.push('localhost');
+    }, TypeError);
     strict.deepEqual(config.production.constructor, ['a.example']);
   });
 });
 
 describe('A collection no alias refers to stays changeable', () => {
   it('lets code change an anchored collection no alias refers to', () => {
-    const config = parse(
+    const config = parse<{ staging: Settings }>(
       'staging: &staging\n  host: localhost\n  origins: [a.example]\n'
-    ) as { staging: Settings };
+    );
 
     config.staging.host = 'staging.example';
     config.staging.origins.push('localhost');
@@ -449,7 +448,7 @@ describe('A collection no alias refers to stays changeable', () => {
   });
 
   it('lets code replace an alias in the collection that holds it', () => {
-    const config = parse(SHARED_CONFIG_DOCUMENT) as SharedConfig;
+    const config = parse<SharedConfig>(SHARED_CONFIG_DOCUMENT);
 
     config.production = { host: 'example.com', origins: [] };
 

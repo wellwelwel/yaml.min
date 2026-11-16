@@ -393,11 +393,11 @@ config.database.port; // number
 
 Parsing the same **YAML** snapshot 5,000 times per run, with 5 warmup runs and 10 measured runs via [**hyperfine**](https://github.com/sharkdp/hyperfine):
 
-| Parser                                       | Times slower than **yaml.min** |
-| -------------------------------------------- | ------------------------------ |
-| ✨ **yaml.min**                              | **1.00x** _(baseline)_         |
-| [js-yaml](https://github.com/nodeca/js-yaml) | 2.05x ↓                        |
-| [yaml](https://github.com/eemeli/yaml)       | 19.82x ↓                       |
+| Parser                                                  | Times slower than **yaml.min** |
+| ------------------------------------------------------- | ------------------------------ |
+| ✨ **yaml.min**                                         | **1.00x** _(baseline)_         |
+| [js-yaml](https://github.com/nodeca/js-yaml) _(v5.5.0)_ | 2.05x ↓                        |
+| [yaml](https://github.com/eemeli/yaml) _(v2.9.1)_       | 19.82x ↓                       |
 
 See the [**benchmark**](https://github.com/wellwelwel/yaml.min/tree/main/benchmark) directory for details.
 

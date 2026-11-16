@@ -208,6 +208,7 @@ const decodeTagName = (
   try {
     return decodeURIComponent(name);
   } catch {
+    // biome-ignore lint/style/useErrorCause: the discarded URIError only reads "URI malformed"
     throw invalidTagError(state, source, start);
   }
 };
@@ -361,7 +362,7 @@ export const readTagDirective = (state: ParserState): void => {
       directiveStart
     );
 
-  if (state.tagHandles?.has(handle))
+  if (state.tagHandles?.has(handle) === true)
     throw yamlError(
       state,
       'DUPLICATE_TAG_HANDLE',

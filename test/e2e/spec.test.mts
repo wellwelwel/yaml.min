@@ -42,7 +42,7 @@ describe('YAML 1.2 spec examples', () => {
 
   it('2.19 - Integers', () =>
     assertParsesTo(read('spec--2.19-integers.yaml'), {
-      canonical: 12345,
+      canonical: 12_345,
       octal: 12,
       hexadecimal: 12,
     }));

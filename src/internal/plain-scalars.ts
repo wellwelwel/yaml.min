@@ -186,7 +186,7 @@ export const parsePlainScalar = (
     if (!isLineBreak(state.source.charCodeAt(state.position))) break;
 
     let cursor = state.position;
-    let lineStart = cursor;
+    let lineStart: number;
     let emptyLineCount = -1;
 
     do {

@@ -41,7 +41,7 @@ export const CHAR_PIPE = 0x7c;
 export const CHAR_RIGHT_BRACE = 0x7d;
 export const CHAR_TILDE = 0x7e;
 
-export const MAX_CODE_POINT = 0x10ffff;
+export const MAX_CODE_POINT = 0x10_ffff;
 
 export const LONE_SURROGATE =
   /[\uD800-\uDFFF](?<![\uD800-\uDBFF](?=[\uDC00-\uDFFF]))(?<![\uD800-\uDBFF][\uDC00-\uDFFF])/;

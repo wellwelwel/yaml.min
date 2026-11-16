@@ -4,37 +4,28 @@
  *   tests/doc/anchors.ts, tests/doc/types.ts, etc.
  */
 
-import { dirname } from 'node:path';
+import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
+import { execPath } from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { describe, it, strict } from 'poku';
-import typescript from 'typescript';
 import { parse, read } from '../__helpers__/index.mts';
 
-const TEST_TSCONFIG = fileURLToPath(
-  new URL('../tsconfig.json', import.meta.url)
+const TYPESCRIPT_COMPILER = join(
+  dirname(createRequire(import.meta.url).resolve('typescript/package.json')),
+  'bin',
+  'tsc'
 );
-const RESULT_TYPE_FIXTURE = fileURLToPath(
-  new URL('../__fixtures__/parse-result-type.mts', import.meta.url)
+const RESULT_TYPE_PROJECT = fileURLToPath(
+  new URL('../__fixtures__/tsconfig.json', import.meta.url)
 );
 
-const typeErrorsIn = (file: string): string[] => {
-  const { config } = typescript.readConfigFile(
-    TEST_TSCONFIG,
-    typescript.sys.readFile
-  );
-  const { options } = typescript.parseJsonConfigFileContent(
-    config,
-    typescript.sys,
-    dirname(TEST_TSCONFIG)
-  );
-  const program = typescript.createProgram([file], options);
+const execute = promisify(execFile);
 
-  return typescript
-    .getPreEmitDiagnostics(program)
-    .map((diagnostic) =>
-      typescript.flattenDiagnosticMessageText(diagnostic.messageText, '\n')
-    );
-};
+const typeCheck = (project: string) =>
+  execute(execPath, [TYPESCRIPT_COMPILER, '--project', project]);
 
 describe('parse only reads a string', () => {
   const nonStrings = {
@@ -57,10 +48,10 @@ describe('Input validation', () => {
     ));
 });
 
-describe('Result type', () => {
-  it('stays unknown until the caller names the shape of parsed data', () => {
-    const typeErrors = typeErrorsIn(RESULT_TYPE_FIXTURE);
+await describe('Result type', async () => {
+  await it('stays unknown until the caller names the shape of parsed data', async () => {
+    const { stdout } = await typeCheck(RESULT_TYPE_PROJECT);
 
-    strict.deepEqual(typeErrors, []);
+    strict.equal(stdout, '');
   });
 });

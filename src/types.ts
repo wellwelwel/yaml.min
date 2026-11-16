@@ -84,14 +84,7 @@ export type AnchorDeclaration = {
 };
 
 export type TagName =
-  | '!'
-  | 'str'
-  | 'int'
-  | 'float'
-  | 'bool'
-  | 'null'
-  | 'seq'
-  | 'map';
+  '!' | 'str' | 'int' | 'float' | 'bool' | 'null' | 'seq' | 'map';
 
 export type NodeTag = {
   name: TagName;

@@ -55,11 +55,11 @@ describe('An integer is decimal, or hexadecimal or octal behind its prefix', () 
     },
     'a hexadecimal integer with uppercase digits': {
       file: 'scalar-types--int-hex-uppercase-only.yaml',
-      expected: 0xabcdef,
+      expected: 0xab_cdef,
     },
     'a hexadecimal integer with a leading zero digit': {
       file: 'scalar-types--int-hex-long.yaml',
-      expected: 685230,
+      expected: 685_230,
     },
   };
   const textNumerals = {
@@ -123,18 +123,21 @@ describe('Numerals too large for a number', () => {
 
 describe('Numerals keep the exact value the document wrote', () => {
   const exactNumerals: Record<string, [string, number]> = {
-    'the largest safe decimal integer': ['9007199254740991', 9007199254740991],
+    'the largest safe decimal integer': [
+      '9007199254740991',
+      9_007_199_254_740_991,
+    ],
     'the smallest safe decimal integer': [
       '-9007199254740991',
-      -9007199254740991,
+      -9_007_199_254_740_991,
     ],
     'the largest safe hexadecimal integer': [
       '0x1FFFFFFFFFFFFF',
-      9007199254740991,
+      9_007_199_254_740_991,
     ],
     'the largest safe octal integer': [
       '0o377777777777777777',
-      9007199254740991,
+      9_007_199_254_740_991,
     ],
     'a decimal integer with a leading zero': ['01234', 1234],
     'the largest finite exponent': ['1e308', 1e308],
@@ -251,7 +254,7 @@ describe('A float reads as a number, with .inf and .nan as special numbers', () 
     },
     'a float with an exponent': {
       file: 'scalar-types--float-scientific.yaml',
-      expected: 685230.15,
+      expected: 685_230.15,
     },
     'negative zero': {
       file: 'scalar-types--float-neg-zero.yaml',

@@ -15,7 +15,7 @@ const PRINTABLE_RANGES: CodeRange[] = [
   [0xe000, 0xfffd],
 ];
 const SURROGATES: CodeRange = [0xd800, 0xdfff];
-const CODE_UNIT_COUNT = 0x10000;
+const CODE_UNIT_COUNT = 0x1_0000;
 
 const isWithin = (code: number, [first, last]: CodeRange): boolean =>
   code >= first && code <= last;

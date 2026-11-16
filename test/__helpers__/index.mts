@@ -12,7 +12,11 @@ export const {
   YamlError,
 }: typeof import('../../src/index.ts') = require('../../src/index.ts');
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const SNAPSHOTS_DIRECTORY = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '__snapshots__'
+);
 
 const MINIMUM_TIME_LIMIT_IN_MILLISECONDS = 500;
 // The parser runs several times slower while coverage is collected, and slower still on a shared CI runner.
@@ -20,7 +24,7 @@ const TIME_LIMIT_IN_REFERENCE_PARSES = 5;
 const ISOLATED_PARSER_SCRIPT = new URL('./isolated-parse.mts', import.meta.url);
 
 export const read = (name: string): string =>
-  readFileSync(join(__dirname, '..', '__snapshots__', name), 'utf8');
+  readFileSync(join(SNAPSHOTS_DIRECTORY, name), 'utf8');
 
 export const assertParsesTo = (input: string, expected: unknown): void => {
   const actual = parse(input);
@@ -40,7 +44,11 @@ export const parseWithinTimeLimit = (input: string): Promise<string> =>
       resolve(outcome);
     };
 
-    worker.once('error', (error) => settle(`crashed: ${error.message}`));
+    worker.once('error', (error) =>
+      settle(
+        `crashed: ${error instanceof Error ? error.message : String(error)}`
+      )
+    );
     worker.once('message', (referenceMillisecondsPerCharacter: number) => {
       worker.once('message', settle);
       deadline = setTimeout(
